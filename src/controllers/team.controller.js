@@ -82,3 +82,14 @@ exports.getActiveSeason = async (req, res) => {
   }
 };
 
+exports.getTransfers = async (req, res) => {
+  try {
+    const teamId = parseInt(req.params.teamId);
+    const data = await teamService.getTeamTransfers(teamId);
+    res.json(data);
+  } catch (err) {
+    console.error('Transfers error:', err.message);
+    res.status(500).json({ message: 'Failed to load transfers' });
+  }
+};
+

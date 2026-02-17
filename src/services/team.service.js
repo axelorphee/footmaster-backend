@@ -159,3 +159,12 @@ exports.getActiveSeasonForTeam = async (teamId) => {
   return null;
 };
 
+// 🔹 TEAM TRANSFERS
+exports.getTeamTransfers = async (teamId) => {
+  const response = await rapidApi.get('/transfers', {
+    params: { team: teamId },
+  });
+
+  return response.data.response || [];
+};
+
