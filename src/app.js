@@ -11,6 +11,8 @@ const rateLimit = require('express-rate-limit');
 const healthRoutes = require('./routes/health.routes');
 
 const app = express();
+app.set('trust proxy', 1);
+
 const limiter = rateLimit({
   windowMs: 1000 * 60, // 1 minute
   max: 30, // 30 requêtes par minute par IP
