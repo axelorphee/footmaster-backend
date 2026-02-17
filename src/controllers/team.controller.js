@@ -54,3 +54,20 @@ exports.getSquad = async (req, res) => {
     res.status(500).json({ message: 'Failed to load squad' });
   }
 };
+
+exports.getStandingsOverview = async (req, res) => {
+  try {
+    const teamId = parseInt(req.params.teamId);
+    const { season } = req.query;
+
+    const data = await teamService.getTeamStandingsOverview(
+      teamId,
+      season
+    );
+
+    res.json(data);
+  } catch (err) {
+    console.error('Standings overview error:', err.message);
+    res.status(500).json({ message: 'Failed to load standings overview' });
+  }
+};

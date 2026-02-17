@@ -82,3 +82,50 @@ exports.getSquadAndCoach = async (teamId) => {
     coach: currentCoach,
   };
 };
+
+exports.getTeamStandingsOverview = async (teamId, season) => {
+  const fixturesResp = await rapidApi.get('/fixtures', {
+    params: { team: teamId, season },
+  });
+
+  const fixtures = fixturesResp.data.response || [];
+
+  const leaguesMap = {};
+
+  for (const match of fixtures) {
+    const league = match.league;
+    if (!league) continue;
+
+    if (!leaguesMap[league.id]) {
+      leaguesMap[league.id] = {
+        id: league.id,
+        name: league.name,
+        logo: league.logo,
+      };
+    }
+  }
+
+  const competitions = Object.values(leaguesMap);
+
+  const result = [];
+
+  for (const comp of competitions) {
+    try {
+      const standingsResp = await rapidApi.get('/standings', {
+        params: { league: comp.id, season },
+      });
+
+      if (
+        standingsResp.data.response &&
+        standingsResp.data.response.length &&
+        standingsResp.data.response[0].league.standings
+      ) {
+        result.push(comp);
+      }
+    } catch (err) {
+      // ignore silently
+    }
+  }
+
+  return result;
+};

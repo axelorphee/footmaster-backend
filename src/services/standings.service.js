@@ -96,3 +96,22 @@ exports.getStandingsByLeagueAndSeason = async (league, season) => {
 
   return result;
 };
+
+exports.getStandingsGroupedByLeagueAndSeason = async (league, season) => {
+  const response = await rapidApi.get('/standings', {
+    params: { league, season },
+  });
+
+  const raw = response.data.response;
+
+  if (!raw.length) {
+    const error = new Error('No standings found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  return {
+    league: raw[0].league,
+    standings: raw[0].league.standings, // ⚠️ PAS de flat
+  };
+};
