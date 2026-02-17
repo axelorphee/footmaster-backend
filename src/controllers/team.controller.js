@@ -15,3 +15,32 @@ exports.getLastFixturesByTeam = async (req, res, next) => {
   }
 };
 
+exports.getOverview = async (req, res) => {
+  try {
+    const teamId = parseInt(req.params.teamId);
+    const data = await teamService.getTeamOverview(teamId);
+    res.json(data);
+  } catch (err) {
+    console.error('Team overview error:', err.message);
+    res.status(500).json({ message: 'Failed to load team overview' });
+  }
+};
+
+exports.getMatches = async (req, res) => {
+  try {
+    const teamId = parseInt(req.params.teamId);
+    const { type, limit } = req.query;
+
+    const data = await teamService.getTeamMatches(
+      teamId,
+      type,
+      parseInt(limit) || 10
+    );
+
+    res.json(data);
+  } catch (err) {
+    console.error('Team matches error:', err.message);
+    res.status(500).json({ message: 'Failed to load team matches' });
+  }
+};
+

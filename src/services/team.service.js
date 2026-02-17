@@ -8,14 +8,43 @@ const rapidApi = axios.create({
   },
 });
 
-exports.getLastFixturesByTeam = async (team, limit = 5) => {
-  const response = await rapidApi.get('/fixtures', {
-    params: {
-      team,
-      last: limit,
-    },
-  });
+// 🔹 TEAM OVERVIEW (InfoTab)
+exports.getTeamOverview = async (teamId) => {
+  const [infoResp, lastResp, nextResp, leaguesResp] = await Promise.all([
+    rapidApi.get('/teams', { params: { id: teamId } }),
+    rapidApi.get('/fixtures', { params: { team: teamId, last: 1 } }),
+    rapidApi.get('/fixtures', { params: { team: teamId, next: 1 } }),
+    rapidApi.get('/leagues', { params: { team: teamId } }),
+  ]);
+
+  const info = infoResp.data.response[0];
+
+  return {
+    team: info.team,
+    venue: info.venue,
+    lastMatch: lastResp.data.response[0] || null,
+    nextMatch: nextResp.data.response[0] || null,
+    competitions: leaguesResp.data.response.map(item => ({
+      id: item.league.id,
+      name: item.league.name,
+      logo: item.league.logo,
+    })),
+  };
+};
+
+// 🔹 MATCHES (MatchsTab)
+exports.getTeamMatches = async (teamId, type, limit = 10) => {
+  const params = {
+    team: teamId,
+  };
+
+  if (type === 'next') {
+    params.next = limit;
+  } else {
+    params.last = limit;
+  }
+
+  const response = await rapidApi.get('/fixtures', { params });
 
   return response.data.response || [];
 };
-
