@@ -71,3 +71,14 @@ exports.getStandingsOverview = async (req, res) => {
     res.status(500).json({ message: 'Failed to load standings overview' });
   }
 };
+
+exports.getActiveSeason = async (req, res) => {
+  try {
+    const teamId = parseInt(req.params.teamId);
+    const season = await teamService.getActiveSeasonForTeam(teamId);
+    res.json({ season });
+  } catch (err) {
+    res.status(500).json({ message: 'Failed to get active season' });
+  }
+};
+

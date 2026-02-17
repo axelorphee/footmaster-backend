@@ -129,3 +129,33 @@ exports.getTeamStandingsOverview = async (teamId, season) => {
 
   return result;
 };
+
+exports.getActiveSeasonForTeam = async (teamId) => {
+  const currentYear = new Date().getFullYear();
+
+  for (let season = currentYear; season >= currentYear - 5; season--) {
+    try {
+      const response = await rapidApi.get('/standings', {
+        params: { team: teamId, season },
+      });
+
+      const data = response.data.response || [];
+
+      const hasStandings = data.some(
+        (e) =>
+          e.league &&
+          e.league.standings &&
+          e.league.standings.length > 0
+      );
+
+      if (hasStandings) {
+        return season;
+      }
+    } catch (_) {
+      // ignore
+    }
+  }
+
+  return null;
+};
+
