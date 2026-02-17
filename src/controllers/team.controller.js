@@ -14,3 +14,4 @@ exports.getLastFixturesByTeam = async (req, res, next) => {
     next(err);
   }
 };
+

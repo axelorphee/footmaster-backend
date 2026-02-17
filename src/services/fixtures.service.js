@@ -13,13 +13,21 @@ exports.getFixtureById = async (id) => {
     params: { id },
   });
 
-  return response.data;
+  const data = response.data.response;
+
+  if (!data || !data.length) {
+    throw new Error('Fixture not found');
+  }
+
+  return data[0]; // 🔥 on renvoie direct le bon objet
 };
+
 
 exports.getHeadToHead = async (h2h, last = 5) => {
   const response = await rapidApi.get('/fixtures/headtohead', {
     params: { h2h, last },
   });
 
-  return response.data;
+  return response.data.response || [];
 };
+
