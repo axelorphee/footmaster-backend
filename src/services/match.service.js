@@ -90,6 +90,22 @@ async function getLineups(fixtureId) {
   return response.data.response || [];
 }
 
+async function getMatchEventsAndStats(fixtureId) {
+  const [eventsResp, statsResp] = await Promise.all([
+    rapidApi.get('/fixtures/events', {
+      params: { fixture: fixtureId },
+    }),
+    rapidApi.get('/fixtures/statistics', {
+      params: { fixture: fixtureId },
+    }),
+  ]);
+
+  return {
+    events: eventsResp.data.response || [],
+    statistics: statsResp.data.response || [],
+  };
+}
+
 
 
 module.exports = {
@@ -97,4 +113,5 @@ module.exports = {
   getHeadToHead,
   getPrematchData,
   getLineups,
+  getMatchEventsAndStats,
 };

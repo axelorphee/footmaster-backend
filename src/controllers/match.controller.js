@@ -34,3 +34,26 @@ exports.getLineups = async (req, res) => {
     res.status(500).json({ message: 'Failed to load lineups' });
   }
 };
+
+
+exports.getEventsAndStats = async (req, res) => {
+  try {
+    const fixtureId = parseInt(req.params.fixtureId);
+
+    if (!fixtureId) {
+      return res.status(400).json({
+        message: 'Invalid fixtureId',
+      });
+    }
+
+    const data = await matchService.getMatchEventsAndStats(fixtureId);
+
+    res.status(200).json(data);
+  } catch (error) {
+    console.error('Events error:', error.message);
+
+    res.status(500).json({
+      message: 'Failed to load events and statistics',
+    });
+  }
+};
