@@ -4,7 +4,8 @@ const standingsController = require('../controllers/standings.controller');
 
 // Route publique
 router.get('/', standingsController.getStandingsByLeagueAndSeason);
-router.get('/standings/grouped', standingsController.getStandingsGrouped);
+router.get('/grouped', standingsController.getStandingsGrouped);
+
 
 
 module.exports = router;
