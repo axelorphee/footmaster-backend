@@ -32,7 +32,9 @@ app.use('/api/matches', matchesRoutes);
 app.use('/api/standings', standingsRoutes);
 app.use('/api/predictions', require('./routes/predictions.routes'));
 app.use('/api/team', require('./routes/team.routes'));
-app.use('/api/fixtures', require('./routes/fixtures.routes'));
+app.use('/api/match', require('./routes/match.routes'));
+
+
 
 
 
