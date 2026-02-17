@@ -30,6 +30,9 @@ app.use(limiter);
 app.use('/api/health', healthRoutes);
 app.use('/api/matches', matchesRoutes);
 app.use('/api/standings', standingsRoutes);
+app.use('/api/predictions', require('./routes/predictions.routes'));
+app.use('/api/team', require('./routes/team.routes'));
+
 
 
 
