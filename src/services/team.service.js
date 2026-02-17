@@ -48,3 +48,37 @@ exports.getTeamMatches = async (teamId, type, limit = 10) => {
 
   return response.data.response || [];
 };
+
+// 🔹 SQUAD + COACH
+exports.getSquadAndCoach = async (teamId) => {
+  const [squadResp, coachResp] = await Promise.all([
+    rapidApi.get('/players/squads', { params: { team: teamId } }),
+    rapidApi.get('/coachs', { params: { team: teamId } }),
+  ]);
+
+  const squad = squadResp.data.response[0]?.players || [];
+  const coaches = coachResp.data.response || [];
+
+  let currentCoach = null;
+
+  for (const coach of coaches) {
+    const career = coach.career || [];
+
+    const isCurrent = career.some(
+      (entry) =>
+        entry.team &&
+        entry.team.id === parseInt(teamId) &&
+        entry.end === null
+    );
+
+    if (isCurrent) {
+      currentCoach = coach;
+      break;
+    }
+  }
+
+  return {
+    players: squad,
+    coach: currentCoach,
+  };
+};

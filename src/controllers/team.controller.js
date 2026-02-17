@@ -44,3 +44,13 @@ exports.getMatches = async (req, res) => {
   }
 };
 
+exports.getSquad = async (req, res) => {
+  try {
+    const teamId = parseInt(req.params.teamId);
+    const data = await teamService.getSquadAndCoach(teamId);
+    res.json(data);
+  } catch (err) {
+    console.error('Squad error:', err.message);
+    res.status(500).json({ message: 'Failed to load squad' });
+  }
+};
