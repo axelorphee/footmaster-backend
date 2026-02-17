@@ -22,8 +22,6 @@ exports.getPrematch = async (req, res) => {
   }
 };
 
-const matchService = require('../services/match.service');
-
 exports.getLineups = async (req, res) => {
   try {
     const { fixtureId } = req.params;
