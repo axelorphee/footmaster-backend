@@ -82,9 +82,19 @@ async function getPrematchData(fixtureId) {
   };
 }
 
+async function getLineups(fixtureId) {
+  const response = await rapidApi.get('/fixtures/lineups', {
+    params: { fixture: fixtureId },
+  });
+
+  return response.data.response || [];
+}
+
+
 
 module.exports = {
   getFixtureDetails,
   getHeadToHead,
   getPrematchData,
+  getLineups,
 };

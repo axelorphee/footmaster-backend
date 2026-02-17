@@ -21,3 +21,18 @@ exports.getPrematch = async (req, res) => {
     });
   }
 };
+
+const matchService = require('../services/match.service');
+
+exports.getLineups = async (req, res) => {
+  try {
+    const { fixtureId } = req.params;
+
+    const data = await matchService.getLineups(fixtureId);
+
+    res.json(data);
+  } catch (error) {
+    console.error('Lineups error:', error.message);
+    res.status(500).json({ message: 'Failed to load lineups' });
+  }
+};
