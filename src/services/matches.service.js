@@ -17,7 +17,7 @@ exports.getMatchesByDate = async (date) => {
   const cacheKey = `matches_${date}`;
   const now = Date.now();
 
-  // ✅ Check cache
+  // ✅ Cache check
   if (cache.has(cacheKey)) {
     const cachedEntry = cache.get(cacheKey);
 
@@ -39,13 +39,28 @@ exports.getMatchesByDate = async (date) => {
           name: 'Premier League',
           country: 'England',
           logo: null,
+          season: 2024,
+          type: 'League',
+          standings: true,
         },
         matches: [
           {
-            fixture: { id: 12345 },
+            fixture: {
+              id: 12345,
+              date: new Date().toISOString(),
+              status: { short: 'NS' },
+            },
+            league: {
+              id: 39,
+              season: 2024,
+            },
             teams: {
-              home: { name: 'Arsenal' },
-              away: { name: 'Chelsea' },
+              home: { id: 1, name: 'Arsenal', logo: null },
+              away: { id: 2, name: 'Chelsea', logo: null },
+            },
+            goals: {
+              home: null,
+              away: null,
             },
           },
         ],
@@ -71,6 +86,9 @@ exports.getMatchesByDate = async (date) => {
               name: league.name,
               country: league.country,
               logo: league.logo,
+              season: league.season,          // ✅ IMPORTANT
+              type: league.type,
+              standings: league.standings,
             },
             matches: [],
           };
@@ -100,7 +118,6 @@ exports.getMatchesByDate = async (date) => {
     }
   }
 
-  // ✅ Store in cache
   cache.set(cacheKey, {
     timestamp: now,
     data: result,

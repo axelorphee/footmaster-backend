@@ -64,7 +64,8 @@ exports.getStandingsByLeagueAndSeason = async (league, season) => {
         throw error;
       }
 
-      const standingsRaw = raw[0].league.standings[0];
+      const standingsRaw = raw[0].league.standings.flat();
+
 
       result = {
         league: {
