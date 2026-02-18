@@ -108,3 +108,21 @@ exports.getPlayerMatches = async (playerId, season) => {
 
   return matches;
 };
+
+exports.getPlayerTransfers = async (playerId) => {
+  const resp = await rapidApi.get('/transfers', {
+    params: { player: playerId }
+  });
+
+  return resp.data.response || [];
+};
+
+
+exports.getPlayerTrophies = async (playerId) => {
+  const resp = await rapidApi.get('/trophies', {
+    params: { player: playerId }
+  });
+
+  return resp.data.response || [];
+};
+

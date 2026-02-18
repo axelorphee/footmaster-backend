@@ -43,3 +43,24 @@ exports.getPlayerMatches = async (req, res, next) => {
     next(err);
   }
 };
+
+exports.getPlayerTrophies = async (req, res, next) => {
+  try {
+    const playerId = parseInt(req.params.playerId);
+    const data = await playerService.getPlayerTrophies(playerId);
+    res.json(data);
+  } catch (err) {
+    next(err);
+  }
+};
+
+exports.getPlayerTransfers = async (req, res, next) => {
+  try {
+    const playerId = parseInt(req.params.playerId);
+    const data = await playerService.getPlayerTransfers(playerId);
+    res.json(data);
+  } catch (err) {
+    next(err);
+  }
+};
+
