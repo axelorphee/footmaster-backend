@@ -64,3 +64,27 @@ exports.getPlayerTransfers = async (req, res, next) => {
   }
 };
 
+exports.getPlayers = async (req, res, next) => {
+  try {
+    const { page, season } = req.query;
+    const data = await playerService.getPlayers(page || 1, season || 2026);
+    res.json(data);
+  } catch (err) {
+    next(err);
+  }
+};
+
+exports.searchPlayers = async (req, res, next) => {
+  try {
+    const { q, page } = req.query;
+    if (!q) {
+      return res.status(400).json({ error: 'Missing query' });
+    }
+
+    const data = await playerService.searchPlayers(q, page || 1);
+    res.json(data);
+  } catch (err) {
+    next(err);
+  }
+};
+

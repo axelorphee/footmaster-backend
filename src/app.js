@@ -36,6 +36,7 @@ app.use('/api/predictions', require('./routes/predictions.routes'));
 app.use('/api/team', require('./routes/team.routes'));
 app.use('/api/match', require('./routes/match.routes'));
 app.use('/api/player', require('./routes/player.routes'));
+app.use('/api/competitions', require('./routes/competition.routes'));
 
 
 

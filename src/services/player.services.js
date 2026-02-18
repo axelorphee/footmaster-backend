@@ -126,3 +126,20 @@ exports.getPlayerTrophies = async (playerId) => {
   return resp.data.response || [];
 };
 
+// 🔹 LIST PLAYERS (pagination)
+exports.getPlayers = async (page = 1, season = 2026) => {
+  const resp = await rapidApi.get('/players', {
+    params: { page, season }
+  });
+
+  return resp.data.response || [];
+};
+
+// 🔹 SEARCH PLAYERS
+exports.searchPlayers = async (query, page = 1) => {
+  const resp = await rapidApi.get('/players/profiles', {
+    params: { search: query, page }
+  });
+
+  return resp.data.response || [];
+};
