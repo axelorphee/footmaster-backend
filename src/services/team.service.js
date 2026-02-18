@@ -168,3 +168,24 @@ exports.getTeamTransfers = async (teamId) => {
   return response.data.response || [];
 };
 
+// 🔹 LIST TEAMS
+exports.getTeams = async () => {
+  const resp = await rapidApi.get('/teams');
+  return resp.data.response || [];
+};
+
+exports.getTeamsByLeagueAndSeason = async (leagueId, season) => {
+  const response = await rapidApi.get('/teams', {
+    params: { league: leagueId, season }
+  });
+
+  return response.data;
+};
+
+exports.searchTeamsByName = async (query) => {
+  const response = await rapidApi.get('/teams', {
+    params: { search: query }
+  });
+
+  return response.data;
+};

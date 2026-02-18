@@ -114,8 +114,13 @@ exports.getPlayerTransfers = async (playerId) => {
     params: { player: playerId }
   });
 
-  return resp.data.response || [];
+  const data = resp.data.response || [];
+
+  if (!data.length) return [];
+
+  return data[0].transfers || [];
 };
+
 
 
 exports.getPlayerTrophies = async (playerId) => {

@@ -93,3 +93,47 @@ exports.getTransfers = async (req, res) => {
   }
 };
 
+exports.getTeams = async (req, res, next) => {
+  try {
+    const data = await teamService.getTeams();
+    res.json(data);
+  } catch (err) {
+    next(err);
+  }
+};
+
+exports.getTeamsByLeague = async (req, res) => {
+  try {
+    const { league, season } = req.query;
+
+    if (!league || !season) {
+      return res.status(400).json({ message: 'Missing league or season' });
+    }
+
+    const response = await require('../services/team.service')
+      .getTeamsByLeagueAndSeason(league, season);
+
+    res.json(response);
+  } catch (err) {
+    console.error('Teams by league error:', err.message);
+    res.status(500).json({ message: 'Failed to load teams' });
+  }
+};
+
+exports.searchTeams = async (req, res) => {
+  try {
+    const { search } = req.query;
+
+    if (!search) {
+      return res.status(400).json({ message: 'Missing search query' });
+    }
+
+    const response = await require('../services/team.service')
+      .searchTeamsByName(search);
+
+    res.json(response);
+  } catch (err) {
+    console.error('Search teams error:', err.message);
+    res.status(500).json({ message: 'Failed to search teams' });
+  }
+};
