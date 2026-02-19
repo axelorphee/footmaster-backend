@@ -39,6 +39,8 @@ app.use('/api/player', require('./routes/player.routes'));
 app.use('/api/competitions', require('./routes/competition.routes'));
 app.use('/api/search', require('./routes/search.routes'));
 app.use('/api/timezone', require('./routes/timezone.routes'));
+app.use('/api/auth', require('./routes/auth.routes'));
+
 
 
 
