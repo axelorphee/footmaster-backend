@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const matchesRoutes = require('./routes/matches.routes');
 const standingsRoutes = require('./routes/standings.routes');
+const favoritesRoutes = require('./routes/favorites.routes');
 const errorMiddleware = require('./middlewares/error.middleware');
 const rateLimit = require('express-rate-limit');
 
@@ -40,7 +41,7 @@ app.use('/api/competitions', require('./routes/competition.routes'));
 app.use('/api/search', require('./routes/search.routes'));
 app.use('/api/timezone', require('./routes/timezone.routes'));
 app.use('/api/auth', require('./routes/auth.routes'));
-
+app.use('/api/favorites', favoritesRoutes);
 
 
 

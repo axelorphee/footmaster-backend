@@ -1,26 +1,29 @@
-const admin = require('../config/firebase');
+const jwt = require('jsonwebtoken');
 
+const JWT_SECRET = process.env.JWT_SECRET || 'supersecretkey';
 
-module.exports = async (req, res, next) => {
+module.exports = (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
 
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      const error = new Error('Authorization token required');
-      error.statusCode = 401;
-      throw error;
+      return res.status(401).json({
+        success: false,
+        message: 'Authorization token required',
+      });
     }
 
-    const idToken = authHeader.split('Bearer ')[1];
+    const token = authHeader.split(' ')[1];
 
-    const decodedToken = await admin.auth().verifyIdToken(idToken);
+    const decoded = jwt.verify(token, JWT_SECRET);
 
-    req.user = decodedToken;
+    req.user = decoded; // { id, role, email_verified }
 
     next();
-  } catch (error) {
-    const err = new Error('Invalid or expired token');
-    err.statusCode = 401;
-    next(err);
+  } catch (err) {
+    return res.status(401).json({
+      success: false,
+      message: 'Invalid or expired token',
+    });
   }
 };
