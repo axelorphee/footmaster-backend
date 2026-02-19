@@ -41,3 +41,43 @@ exports.register = async (email, password, username) => {
     token,
   };
 };
+
+exports.login = async (email, password) => {
+  const userResult = await pool.query(
+    'SELECT * FROM users WHERE email = $1',
+    [email]
+  );
+
+  if (userResult.rows.length === 0) {
+    throw new Error('Invalid credentials');
+  }
+
+  const user = userResult.rows[0];
+
+  const isMatch = await bcrypt.compare(password, user.password);
+
+  if (!isMatch) {
+    throw new Error('Invalid credentials');
+  }
+
+  const token = jwt.sign(
+    {
+      id: user.id,
+      role: user.role,
+      email_verified: user.email_verified,
+    },
+    JWT_SECRET,
+    { expiresIn: '7d' }
+  );
+
+  return {
+    user: {
+      id: user.id,
+      email: user.email,
+      username: user.username,
+      role: user.role,
+      email_verified: user.email_verified,
+    },
+    token,
+  };
+};
