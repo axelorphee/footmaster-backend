@@ -87,3 +87,31 @@ exports.login = async (email, password) => {
     token,
   };
 };
+
+exports.verifyEmail = async (token) => {
+  const userResult = await pool.query(
+    'SELECT * FROM users WHERE email_verification_token = $1',
+    [token]
+  );
+
+  if (userResult.rows.length === 0) {
+    throw new Error('Invalid verification token');
+  }
+
+  const user = userResult.rows[0];
+
+  if (!user.email_verification_expires || new Date() > user.email_verification_expires) {
+    throw new Error('Verification token expired');
+  }
+
+  await pool.query(
+    `UPDATE users 
+     SET email_verified = true,
+         email_verification_token = NULL,
+         email_verification_expires = NULL
+     WHERE id = $1`,
+    [user.id]
+  );
+
+  return 'Email verified successfully';
+};

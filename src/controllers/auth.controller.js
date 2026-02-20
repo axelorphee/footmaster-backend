@@ -45,3 +45,25 @@ exports.login = async (req, res, next) => {
     next(err);
   }
 };
+
+exports.verifyEmail = async (req, res, next) => {
+  try {
+    const { token } = req.query;
+
+    if (!token) {
+      return res.status(400).json({
+        success: false,
+        message: 'Verification token is required',
+      });
+    }
+
+    const result = await authService.verifyEmail(token);
+
+    res.status(200).json({
+      success: true,
+      message: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
