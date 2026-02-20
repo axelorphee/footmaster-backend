@@ -1,10 +1,15 @@
 const nodemailer = require('nodemailer');
 
 const transporter = nodemailer.createTransport({
-  service: 'gmail',
+  host: 'smtp.gmail.com',
+  port: 587,
+  secure: false, // important pour 587
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
+  },
+  tls: {
+    rejectUnauthorized: false,
   },
 });
 
@@ -19,15 +24,8 @@ exports.sendVerificationEmail = async (email, token) => {
     subject: 'Verify your email address',
     html: `
       <h2>Welcome to FootMaster ⚽</h2>
-      <p>Please verify your email by clicking the button below:</p>
-      <a href="${verificationUrl}" style="
-        display:inline-block;
-        padding:10px 20px;
-        background-color:#28a745;
-        color:white;
-        text-decoration:none;
-        border-radius:5px;
-      ">Verify Email</a>
+      <p>Please verify your email by clicking below:</p>
+      <a href="${verificationUrl}">Verify Email</a>
       <p>This link expires in 1 hour.</p>
     `,
   };
