@@ -3,9 +3,11 @@ const { Resend } = require('resend');
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 exports.sendVerificationEmail = async (email, token) => {
+  console.log("📧 Sending verification email to:", email);
+
   const verificationUrl = `https://footmaster-backend.onrender.com/api/auth/verify-email?token=${token}`;
 
-  await resend.emails.send({
+  const response = await resend.emails.send({
     from: 'FootMaster <onboarding@resend.dev>',
     to: email,
     subject: 'Verify your email address',
@@ -23,4 +25,6 @@ exports.sendVerificationEmail = async (email, token) => {
       <p>This link expires in 1 hour.</p>
     `,
   });
+
+  console.log("📨 Resend response:", response);
 };
