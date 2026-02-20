@@ -7,7 +7,7 @@ exports.sendVerificationEmail = async (email, token) => {
     'https://api.mailersend.com/v1/email',
     {
       from: {
-        email: "no-reply@trial.mailersend.com",
+        email: "no-reply@test-86org8ede00gew13.mlsender.net",
         name: "FootMaster"
       },
       to: [
