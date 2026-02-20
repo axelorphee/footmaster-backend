@@ -2,6 +2,7 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const pool = require('../config/database');
 const crypto = require('crypto');
+const emailService = require('./email.service');
 
 
 const JWT_SECRET = process.env.JWT_SECRET || 'supersecretkey';
@@ -34,6 +35,7 @@ const verificationExpires = new Date(Date.now() + 1000 * 60 * 60); // 1 hour
 );
 
   const user = newUser.rows[0];
+  await emailService.sendVerificationEmail(email, verificationToken);
 
   // Generate JWT
   const token = jwt.sign(
