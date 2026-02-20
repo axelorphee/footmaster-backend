@@ -1,14 +1,20 @@
-const { Resend } = require('resend');
+const nodemailer = require('nodemailer');
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
+  },
+});
 
 exports.sendVerificationEmail = async (email, token) => {
   console.log("📧 Sending verification email to:", email);
 
   const verificationUrl = `https://footmaster-backend.onrender.com/api/auth/verify-email?token=${token}`;
 
-  const response = await resend.emails.send({
-    from: 'FootMaster <onboarding@resend.dev>',
+  const mailOptions = {
+    from: `"FootMaster ⚽" <${process.env.EMAIL_USER}>`,
     to: email,
     subject: 'Verify your email address',
     html: `
@@ -24,7 +30,9 @@ exports.sendVerificationEmail = async (email, token) => {
       ">Verify Email</a>
       <p>This link expires in 1 hour.</p>
     `,
-  });
+  };
 
-  console.log("📨 Resend response:", response);
+  const info = await transporter.sendMail(mailOptions);
+
+  console.log("📨 Email sent:", info.response);
 };
