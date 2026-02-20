@@ -1,6 +1,7 @@
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const pool = require('../config/database');
+const crypto = require('crypto');
 
 
 const JWT_SECRET = process.env.JWT_SECRET || 'supersecretkey';
@@ -19,13 +20,18 @@ exports.register = async (email, password, username) => {
   // Hash password
   const hashedPassword = await bcrypt.hash(password, 10);
 
+  // Generate email verification token
+const verificationToken = crypto.randomBytes(32).toString('hex');
+const verificationExpires = new Date(Date.now() + 1000 * 60 * 60); // 1 hour
+
   // Insert user
   const newUser = await pool.query(
-    `INSERT INTO users (email, password, username)
-     VALUES ($1, $2, $3)
-     RETURNING id, email, username, role, email_verified`,
-    [email, hashedPassword, username]
-  );
+  `INSERT INTO users 
+   (email, password, username, email_verification_token, email_verification_expires)
+   VALUES ($1, $2, $3, $4, $5)
+   RETURNING id, email, username, role, email_verified`,
+  [email, hashedPassword, username, verificationToken, verificationExpires]
+);
 
   const user = newUser.rows[0];
 
