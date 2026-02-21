@@ -17,6 +17,12 @@ exports.getFavorites = async (req, res, next) => {
 
 exports.addFavorite = async (req, res, next) => {
   try {
+    if (!req.user.email_verified) {
+  return res.status(403).json({
+    success: false,
+    message: 'Please verify your email first',
+  });
+}
     const userId = req.user.id;
     const { type, item_id, name, logo } = req.body;
 
@@ -39,6 +45,12 @@ exports.addFavorite = async (req, res, next) => {
 
 exports.removeFavorite = async (req, res, next) => {
   try {
+    if (!req.user.email_verified) {
+  return res.status(403).json({
+    success: false,
+    message: 'Please verify your email first',
+  });
+}
     const userId = req.user.id;
     const { type, item_id } = req.params;
 
