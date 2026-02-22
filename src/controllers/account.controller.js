@@ -62,3 +62,33 @@ exports.confirmEmailChange = async (req, res, next) => {
     next(err);
   }
 };
+
+exports.requestDeleteAccount = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+
+    await accountService.requestDeleteAccount(userId);
+
+    res.json({
+      success: true,
+      message: 'Confirmation email sent',
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+exports.confirmDeleteAccount = async (req, res, next) => {
+  try {
+    const { token } = req.query;
+
+    await accountService.confirmDeleteAccount(token);
+
+    res.json({
+      success: true,
+      message: 'Account deleted successfully',
+    });
+  } catch (err) {
+    next(err);
+  }
+};

@@ -37,3 +37,24 @@ exports.sendVerificationEmail = async (email, token, type = 'register') => {
     }
   );
 };
+
+exports.sendCustomEmail = async (email, subject, html) => {
+  await axios.post(
+    'https://api.mailersend.com/v1/email',
+    {
+      from: {
+        email: "no-reply@test-86org8ede00gew13.mlsender.net",
+        name: "FootMaster"
+      },
+      to: [{ email }],
+      subject,
+      html
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${process.env.MAILERSEND_API_KEY}`,
+        'Content-Type': 'application/json'
+      }
+    }
+  );
+};

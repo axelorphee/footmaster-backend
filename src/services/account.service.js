@@ -2,6 +2,8 @@ const pool = require('../config/database');
 const bcrypt = require('bcrypt');
 const crypto = require('crypto');
 const emailService = require('./email.service');
+const deleteLink = `https://footmaster-backend.onrender.com/api/account/confirm-delete?token=${token}`;
+
 
 exports.updateProfile = async (userId, username) => {
   const result = await pool.query(
@@ -95,6 +97,64 @@ exports.confirmEmailChange = async (token) => {
          email_verification_token = NULL,
          email_verification_expires = NULL
      WHERE id = $1`,
+    [user.id]
+  );
+};
+
+exports.requestDeleteAccount = async (userId) => {
+  const userResult = await pool.query(
+    'SELECT email FROM users WHERE id = $1',
+    [userId]
+  );
+
+  if (userResult.rows.length === 0) {
+    throw new Error('User not found');
+  }
+
+  const user = userResult.rows[0];
+
+  const token = crypto.randomBytes(32).toString('hex');
+  const expires = new Date(Date.now() + 1000 * 60 * 60);
+
+  await pool.query(
+    `UPDATE users
+     SET delete_account_token = $1,
+         delete_account_expires = $2
+     WHERE id = $3`,
+    [token, expires, userId]
+  );
+
+  
+  await emailService.sendCustomEmail(
+    user.email,
+    "Confirm Account Deletion",
+    `
+      <h2>Confirm Account Deletion</h2>
+      <p>Click below to permanently delete your account:</p>
+      <a href="${deleteLink}">Delete My Account</a>
+      <p>This link expires in 1 hour.</p>
+    `
+  );
+};
+
+exports.confirmDeleteAccount = async (token) => {
+  const userResult = await pool.query(
+    'SELECT * FROM users WHERE delete_account_token = $1',
+    [token]
+  );
+
+  if (userResult.rows.length === 0) {
+    throw new Error('Invalid delete token');
+  }
+
+  const user = userResult.rows[0];
+
+  if (new Date() > user.delete_account_expires) {
+    throw new Error('Delete token expired');
+  }
+
+  await pool.query(
+    'DELETE FROM users WHERE id = $1',
     [user.id]
   );
 };
