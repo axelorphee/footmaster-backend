@@ -2,7 +2,6 @@ const pool = require('../config/database');
 const bcrypt = require('bcrypt');
 const crypto = require('crypto');
 const emailService = require('./email.service');
-const deleteLink = `https://footmaster-backend.onrender.com/api/account/confirm-delete?token=${token}`;
 
 
 exports.updateProfile = async (userId, username) => {
@@ -124,7 +123,8 @@ exports.requestDeleteAccount = async (userId) => {
     [token, expires, userId]
   );
 
-  
+  const deleteLink = `https://footmaster-backend.onrender.com/api/account/confirm-delete?token=${token}`;
+
   await emailService.sendCustomEmail(
     user.email,
     "Confirm Account Deletion",
