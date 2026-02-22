@@ -1,7 +1,7 @@
 const pool = require('../config/database');
 const bcrypt = require('bcrypt');
-  const token = crypto.randomBytes(32).toString('hex');
-  const expires = new Date(Date.now() + 1000 * 60 * 60); // 1h
+const crypto = require('crypto');
+const emailService = require('./email.service');
 
 exports.updateProfile = async (userId, username) => {
   const result = await pool.query(
@@ -15,8 +15,6 @@ exports.updateProfile = async (userId, username) => {
 
   return result.rows[0];
 };
-
-
 
 exports.updatePassword = async (userId, currentPassword, newPassword) => {
   const userResult = await pool.query(
@@ -47,9 +45,6 @@ exports.updatePassword = async (userId, currentPassword, newPassword) => {
   );
 };
 
-const crypto = require('crypto');
-const emailService = require('./email.service');
-
 exports.updateEmail = async (userId, newEmail) => {
   const existing = await pool.query(
     'SELECT id FROM users WHERE email = $1',
@@ -59,6 +54,10 @@ exports.updateEmail = async (userId, newEmail) => {
   if (existing.rows.length > 0) {
     throw new Error('Email already in use');
   }
+
+  // ✅ ON GÉNÈRE ICI
+  const token = crypto.randomBytes(32).toString('hex');
+  const expires = new Date(Date.now() + 1000 * 60 * 60);
 
   await pool.query(
     `UPDATE users
