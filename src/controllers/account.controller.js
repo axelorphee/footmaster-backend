@@ -31,3 +31,34 @@ exports.updatePassword = async (req, res, next) => {
     next(err);
   }
 };
+
+exports.updateEmail = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { newEmail } = req.body;
+
+    await accountService.updateEmail(userId, newEmail);
+
+    res.json({
+      success: true,
+      message: 'Verification email sent',
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+exports.confirmEmailChange = async (req, res, next) => {
+  try {
+    const { token } = req.query;
+
+    await accountService.confirmEmailChange(token);
+
+    res.json({
+      success: true,
+      message: 'Email updated successfully',
+    });
+  } catch (err) {
+    next(err);
+  }
+};
