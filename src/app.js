@@ -5,6 +5,7 @@ const standingsRoutes = require('./routes/standings.routes');
 const favoritesRoutes = require('./routes/favorites.routes');
 const errorMiddleware = require('./middlewares/error.middleware');
 const rateLimit = require('express-rate-limit');
+const accountRoutes = require('./routes/account.routes');
 
 
 
@@ -42,7 +43,7 @@ app.use('/api/search', require('./routes/search.routes'));
 app.use('/api/timezone', require('./routes/timezone.routes'));
 app.use('/api/auth', require('./routes/auth.routes'));
 app.use('/api/favorites', favoritesRoutes);
-
+app.use('/api/account', accountRoutes);
 
 
 
