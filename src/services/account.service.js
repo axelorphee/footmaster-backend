@@ -1,4 +1,5 @@
 const pool = require('../config/database');
+const bcrypt = require('bcrypt');
 
 exports.updateProfile = async (userId, username) => {
   const result = await pool.query(
@@ -13,8 +14,7 @@ exports.updateProfile = async (userId, username) => {
   return result.rows[0];
 };
 
-const bcrypt = require('bcrypt');
-const pool = require('../config/database');
+
 
 exports.updatePassword = async (userId, currentPassword, newPassword) => {
   const userResult = await pool.query(
