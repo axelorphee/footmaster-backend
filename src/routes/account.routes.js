@@ -8,6 +8,6 @@ router.put('/update-password', authMiddleware, accountController.updatePassword)
 router.put('/update-email', authMiddleware, accountController.updateEmail);
 router.get('/confirm-email-change', accountController.confirmEmailChange);
 router.post('/request-delete', authMiddleware, accountController.requestDeleteAccount);
-router.get('/confirm-delete', accountController.confirmDeleteAccount);B
+router.get('/confirm-delete', accountController.confirmDeleteAccount);
 
 module.exports = router;
