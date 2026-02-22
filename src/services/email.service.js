@@ -1,7 +1,13 @@
 const axios = require('axios');
 
-exports.sendVerificationEmail = async (email, token) => {
-  const verificationUrl = `https://footmaster-backend.onrender.com/api/auth/verify-email?token=${token}`;
+exports.sendVerificationEmail = async (email, token, type = 'register') => {
+  let verificationUrl;
+
+  if (type === 'email-change') {
+    verificationUrl = `https://footmaster-backend.onrender.com/api/account/confirm-email-change?token=${token}`;
+  } else {
+    verificationUrl = `https://footmaster-backend.onrender.com/api/auth/verify-email?token=${token}`;
+  }
 
   await axios.post(
     'https://api.mailersend.com/v1/email',
@@ -17,7 +23,7 @@ exports.sendVerificationEmail = async (email, token) => {
       ],
       subject: "Verify your email",
       html: `
-        <h2>Welcome to FootMaster ⚽</h2>
+        <h2>FootMaster ⚽</h2>
         <p>Click below to verify:</p>
         <a href="${verificationUrl}">Verify Email</a>
         <p>This link expires in 1 hour.</p>

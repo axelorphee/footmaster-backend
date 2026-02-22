@@ -68,7 +68,7 @@ exports.updateEmail = async (userId, newEmail) => {
     [newEmail, token, expires, userId]
   );
 
-  await emailService.sendVerificationEmail(newEmail, token);
+  await emailService.sendVerificationEmail(newEmail, token, 'email-change');
 };
 
 exports.confirmEmailChange = async (token) => {
