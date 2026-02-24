@@ -3,7 +3,7 @@ const jwt = require('jsonwebtoken');
 const pool = require('../config/database');
 const crypto = require('crypto');
 const emailService = require('./email.service');
-
+const createError = require('http-errors');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'supersecretkey';
 
@@ -15,7 +15,7 @@ exports.register = async (email, password, username) => {
   );
 
   if (existingUser.rows.length > 0) {
-    throw new Error('User already exists');
+    throw createError(400, 'User already exists');
   }
 
   // Hash password
@@ -57,7 +57,7 @@ exports.login = async (email, password) => {
   );
 
   if (userResult.rows.length === 0) {
-    throw new Error('Invalid credentials');
+    throw createError(401, 'Invalid credentials');
   }
 
   const user = userResult.rows[0];
@@ -65,7 +65,7 @@ exports.login = async (email, password) => {
   const isMatch = await bcrypt.compare(password, user.password);
 
   if (!isMatch) {
-    throw new Error('Invalid credentials');
+    throw createError(401, 'Invalid credentials');
   }
 
   const token = jwt.sign(

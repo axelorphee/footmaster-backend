@@ -2,6 +2,7 @@ const pool = require('../config/database');
 const bcrypt = require('bcrypt');
 const crypto = require('crypto');
 const emailService = require('./email.service');
+const createError = require('http-errors');
 
 
 exports.updateProfile = async (userId, username) => {
@@ -24,7 +25,7 @@ exports.updatePassword = async (userId, currentPassword, newPassword) => {
   );
 
   if (userResult.rows.length === 0) {
-    throw new Error('User not found');
+    throw createError(404, 'User not found');
   }
 
   const user = userResult.rows[0];
@@ -33,7 +34,7 @@ exports.updatePassword = async (userId, currentPassword, newPassword) => {
 
   if (!isMatch) {
     const createError = require('http-errors');
-throw createError(400, 'Current password incorrect');
+throw createError(401, 'Current password incorrect');
   }
 
   const hashedPassword = await bcrypt.hash(newPassword, 10);
@@ -54,7 +55,7 @@ exports.updateEmail = async (userId, newEmail, currentPassword) => {
   );
 
   if (userResult.rows.length === 0) {
-    throw new Error('User not found');
+    throw createError(404, 'User not found');
   }
 
   const user = userResult.rows[0];
@@ -65,7 +66,7 @@ exports.updateEmail = async (userId, newEmail, currentPassword) => {
   );
 
   if (!isMatch) {
-    throw new Error('Current password incorrect');
+    throw createError(401, 'Current password incorrect');
   }
 
   const existing = await pool.query(
@@ -74,7 +75,7 @@ exports.updateEmail = async (userId, newEmail, currentPassword) => {
   );
 
   if (existing.rows.length > 0) {
-    throw new Error('Email already in use');
+    throw createError(400, 'Email already in use');
   }
 
   const token = crypto.randomBytes(32).toString('hex');
@@ -103,13 +104,13 @@ exports.confirmEmailChange = async (token) => {
   );
 
   if (userResult.rows.length === 0) {
-    throw new Error('Invalid token');
+    throw createError(400, 'Invalid token');
   }
 
   const user = userResult.rows[0];
 
   if (new Date() > user.email_verification_expires) {
-    throw new Error('Token expired');
+    throw createError(400, 'Token expired');
   }
 
   await pool.query(
@@ -131,7 +132,7 @@ exports.requestDeleteAccount = async (userId) => {
   );
 
   if (userResult.rows.length === 0) {
-    throw new Error('User not found');
+    throw createError(404, 'User not found');
   }
 
   const user = userResult.rows[0];
@@ -168,13 +169,13 @@ exports.confirmDeleteAccount = async (token) => {
   );
 
   if (userResult.rows.length === 0) {
-    throw new Error('Invalid delete token');
+    throw createError(400, 'Invalid delete token');
   }
 
   const user = userResult.rows[0];
 
   if (new Date() > user.delete_account_expires) {
-    throw new Error('Delete token expired');
+    throw createError(400, 'Delete token expired');
   }
 
   await pool.query(
