@@ -6,6 +6,7 @@ const favoritesRoutes = require('./routes/favorites.routes');
 const errorMiddleware = require('./middlewares/error.middleware');
 const rateLimit = require('express-rate-limit');
 const accountRoutes = require('./routes/account.routes');
+const startCleanupJob = require('./jobs/cleanup.job');
 
 
 
@@ -27,6 +28,7 @@ const limiter = rateLimit({
 
 app.use(cors());
 app.use(express.json());
+startCleanupJob();
 app.use(limiter);
 
 

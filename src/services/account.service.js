@@ -4,7 +4,6 @@ const crypto = require('crypto');
 const emailService = require('./email.service');
 const createError = require('http-errors');
 
-
 exports.updateProfile = async (userId, username) => {
   const result = await pool.query(
     `UPDATE users
@@ -18,9 +17,9 @@ exports.updateProfile = async (userId, username) => {
   return result.rows[0];
 };
 
-exports.updatePassword = async (userId, currentPassword, newPassword) => {
+exports.requestPasswordChange = async (userId, currentPassword, newPassword) => {
   const userResult = await pool.query(
-    'SELECT password FROM users WHERE id = $1',
+    'SELECT * FROM users WHERE id = $1',
     [userId]
   );
 
@@ -33,18 +32,62 @@ exports.updatePassword = async (userId, currentPassword, newPassword) => {
   const isMatch = await bcrypt.compare(currentPassword, user.password);
 
   if (!isMatch) {
-    const createError = require('http-errors');
-throw createError(401, 'Current password incorrect');
+    throw createError(401, 'Current password incorrect');
   }
 
-  const hashedPassword = await bcrypt.hash(newPassword, 10);
+  const hashedNewPassword = await bcrypt.hash(newPassword, 10);
+
+  const token = crypto.randomBytes(32).toString('hex');
+  const expires = new Date(Date.now() + 1000 * 60 * 60);
 
   await pool.query(
     `UPDATE users
-     SET password = $1,
-         updated_at = CURRENT_TIMESTAMP
-     WHERE id = $2`,
-    [hashedPassword, userId]
+     SET password_temp = $1,
+         password_change_token = $2,
+         password_change_expires = $3
+     WHERE id = $4`,
+    [hashedNewPassword, token, expires, userId]
+  );
+
+  const confirmLink = `https://footmaster-backend.onrender.com/api/account/confirm-password-change?token=${token}`;
+
+  await emailService.sendCustomEmail(
+    user.email,
+    "Confirm Password Change",
+    `
+      <h2>Confirm Password Change</h2>
+      <p>Click below to confirm your new password:</p>
+      <a href="${confirmLink}">Confirm Password Change</a>
+      <p>This link expires in 1 hour.</p>
+    `
+  );
+};
+
+exports.confirmPasswordChange = async (token) => {
+  const userResult = await pool.query(
+    'SELECT * FROM users WHERE password_change_token = $1',
+    [token]
+  );
+
+  if (userResult.rows.length === 0) {
+    throw createError(400, 'Invalid token');
+  }
+
+  const user = userResult.rows[0];
+
+  if (new Date() > user.password_change_expires) {
+    throw createError(400, 'Token expired');
+  }
+
+  await pool.query(
+    `UPDATE users
+     SET password = password_temp,
+         password_temp = NULL,
+         password_change_token = NULL,
+         password_change_expires = NULL,
+         password_changed_at = CURRENT_TIMESTAMP
+     WHERE id = $1`,
+    [user.id]
   );
 };
 
@@ -85,7 +128,8 @@ exports.updateEmail = async (userId, newEmail, currentPassword) => {
     `UPDATE users
      SET email_temp = $1,
          email_verification_token = $2,
-         email_verification_expires = $3
+         email_verification_expires = $3,
+         email_verified = false
      WHERE id = $4`,
     [newEmail, token, expires, userId]
   );

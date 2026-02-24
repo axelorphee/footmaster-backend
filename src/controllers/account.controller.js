@@ -16,12 +16,27 @@ exports.updateProfile = async (req, res, next) => {
   }
 };
 
-exports.updatePassword = async (req, res, next) => {
+exports.requestPasswordChange = async (req, res, next) => {
   try {
     const userId = req.user.id;
     const { currentPassword, newPassword } = req.body;
 
-    await accountService.updatePassword(userId, currentPassword, newPassword);
+    await accountService.requestPasswordChange(userId, currentPassword, newPassword);
+
+    res.json({
+      success: true,
+      message: 'Confirmation email sent',
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+exports.confirmPasswordChange = async (req, res, next) => {
+  try {
+    const { token } = req.query;
+
+    await accountService.confirmPasswordChange(token);
 
     res.json({
       success: true,
