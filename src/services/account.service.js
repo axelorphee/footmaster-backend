@@ -32,7 +32,8 @@ exports.updatePassword = async (userId, currentPassword, newPassword) => {
   const isMatch = await bcrypt.compare(currentPassword, user.password);
 
   if (!isMatch) {
-    throw new Error('Current password incorrect');
+    const createError = require('http-errors');
+throw createError(400, 'Current password incorrect');
   }
 
   const hashedPassword = await bcrypt.hash(newPassword, 10);
