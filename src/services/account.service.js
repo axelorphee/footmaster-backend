@@ -46,7 +46,27 @@ exports.updatePassword = async (userId, currentPassword, newPassword) => {
   );
 };
 
-exports.updateEmail = async (userId, newEmail) => {
+exports.updateEmail = async (userId, newEmail, currentPassword) => {
+  const userResult = await pool.query(
+    'SELECT * FROM users WHERE id = $1',
+    [userId]
+  );
+
+  if (userResult.rows.length === 0) {
+    throw new Error('User not found');
+  }
+
+  const user = userResult.rows[0];
+
+  const isMatch = await bcrypt.compare(
+    currentPassword,
+    user.password
+  );
+
+  if (!isMatch) {
+    throw new Error('Current password incorrect');
+  }
+
   const existing = await pool.query(
     'SELECT id FROM users WHERE email = $1',
     [newEmail]
@@ -56,7 +76,6 @@ exports.updateEmail = async (userId, newEmail) => {
     throw new Error('Email already in use');
   }
 
-  // ✅ ON GÉNÈRE ICI
   const token = crypto.randomBytes(32).toString('hex');
   const expires = new Date(Date.now() + 1000 * 60 * 60);
 
@@ -69,7 +88,11 @@ exports.updateEmail = async (userId, newEmail) => {
     [newEmail, token, expires, userId]
   );
 
-  await emailService.sendVerificationEmail(newEmail, token, 'email-change');
+  await emailService.sendVerificationEmail(
+    newEmail,
+    token,
+    'email-change'
+  );
 };
 
 exports.confirmEmailChange = async (token) => {

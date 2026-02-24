@@ -35,9 +35,13 @@ exports.updatePassword = async (req, res, next) => {
 exports.updateEmail = async (req, res, next) => {
   try {
     const userId = req.user.id;
-    const { newEmail } = req.body;
+    const { newEmail, currentPassword } = req.body;
 
-    await accountService.updateEmail(userId, newEmail);
+    await accountService.updateEmail(
+      userId,
+      newEmail,
+      currentPassword
+    );
 
     res.json({
       success: true,
