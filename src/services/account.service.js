@@ -113,31 +113,43 @@ exports.updateEmail = async (userId, newEmail, currentPassword) => {
   }
 
   const existing = await pool.query(
-    'SELECT id FROM users WHERE email = $1',
-    [newEmail]
+    'SELECT id FROM users WHERE email = $1 AND id != $2',
+    [newEmail, userId]
   );
 
   if (existing.rows.length > 0) {
-    throw createError(400, 'Email already in use');
+    throw createError(400, 'Cette adresse email est déjà utilisée.');
   }
 
   const token = crypto.randomBytes(32).toString('hex');
   const expires = new Date(Date.now() + 1000 * 60 * 60);
 
   await pool.query(
-  `UPDATE users
-   SET email_temp = $1,
-       email_verification_token = $2,
-       email_verification_expires = $3
-   WHERE id = $4`,
+    `UPDATE users
+     SET email_temp = $1,
+         email_verification_token = $2,
+         email_verification_expires = $3
+     WHERE id = $4`,
     [newEmail, token, expires, userId]
   );
 
-  await emailService.sendVerificationEmail(
-    newEmail,
-    token,
-    'email-change'
-  );
+  // 🔒 Envoi email sécurisé
+  try {
+    await emailService.sendVerificationEmail(
+      newEmail,
+      token,
+      'email-change'
+    );
+  } catch (err) {
+    console.error("Email sending failed:", err.response?.data || err.message);
+
+    throw createError(
+      500,
+      'Impossible d’envoyer l’email de confirmation. Veuillez réessayer plus tard.'
+    );
+  }
+
+  return { success: true };
 };
 
 exports.confirmEmailChange = async (token) => {
