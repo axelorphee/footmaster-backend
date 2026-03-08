@@ -125,12 +125,11 @@ exports.updateEmail = async (userId, newEmail, currentPassword) => {
   const expires = new Date(Date.now() + 1000 * 60 * 60);
 
   await pool.query(
-    `UPDATE users
-     SET email_temp = $1,
-         email_verification_token = $2,
-         email_verification_expires = $3,
-         email_verified = false
-     WHERE id = $4`,
+  `UPDATE users
+   SET email_temp = $1,
+       email_verification_token = $2,
+       email_verification_expires = $3
+   WHERE id = $4`,
     [newEmail, token, expires, userId]
   );
 
@@ -159,9 +158,10 @@ exports.confirmEmailChange = async (token) => {
 
   await pool.query(
     `UPDATE users
-     SET email = email_temp,
-         email_temp = NULL,
-         email_verified = true,
+    SET email = email_temp,
+    email_temp = NULL,
+    email_verified = true,
+    password_changed_at = CURRENT_TIMESTAMP,
          email_verification_token = NULL,
          email_verification_expires = NULL
      WHERE id = $1`,
