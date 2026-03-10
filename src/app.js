@@ -46,6 +46,7 @@ app.use('/api/timezone', require('./routes/timezone.routes'));
 app.use('/api/auth', require('./routes/auth.routes'));
 app.use('/api/favorites', favoritesRoutes);
 app.use('/api/account', accountRoutes);
+app.use('/api/fantasy', require('./routes/fantasy.routes'));
 
 
 
