@@ -11,6 +11,13 @@ router.get('/leagues/my', authMiddleware, fantasyController.getMyLeagues);
 
 router.get('/leagues/:leagueId', authMiddleware, fantasyController.getLeagueById);
 
+router.get(
+  '/leagues/:leagueId/requests',
+  authMiddleware,
+  requireVerified,
+  fantasyController.getLeagueRequests
+);
+
 router.post(
   '/leagues',
   authMiddleware,
@@ -23,6 +30,20 @@ router.post(
   authMiddleware,
   requireVerified,
   fantasyController.joinLeague
+);
+
+router.post(
+  '/leagues/:leagueId/requests/:userId/approve',
+  authMiddleware,
+  requireVerified,
+  fantasyController.approveLeagueRequest
+);
+
+router.post(
+  '/leagues/:leagueId/requests/:userId/reject',
+  authMiddleware,
+  requireVerified,
+  fantasyController.rejectLeagueRequest
 );
 
 module.exports = router;

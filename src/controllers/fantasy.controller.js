@@ -27,10 +27,12 @@ exports.joinLeague = async (req, res, next) => {
   try {
     const userId = req.user.id;
     const { leagueId } = req.params;
+    const { inviteCode } = req.body;
 
     const result = await fantasyService.joinLeague({
       leagueId,
       userId,
+      inviteCode,
     });
 
     const status = result.membership.status;
@@ -86,6 +88,66 @@ exports.getLeagueById = async (req, res, next) => {
     res.json({
       success: true,
       data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+exports.getLeagueRequests = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { leagueId } = req.params;
+
+    const requests = await fantasyService.getLeagueRequests({
+      leagueId,
+      userId,
+    });
+
+    res.json({
+      success: true,
+      data: requests,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+exports.approveLeagueRequest = async (req, res, next) => {
+  try {
+    const adminUserId = req.user.id;
+    const { leagueId, userId } = req.params;
+
+    const result = await fantasyService.approveLeagueRequest({
+      leagueId,
+      adminUserId,
+      targetUserId: userId,
+    });
+
+    res.json({
+      success: true,
+      data: result,
+      message: 'Join request approved successfully',
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+exports.rejectLeagueRequest = async (req, res, next) => {
+  try {
+    const adminUserId = req.user.id;
+    const { leagueId, userId } = req.params;
+
+    await fantasyService.rejectLeagueRequest({
+      leagueId,
+      adminUserId,
+      targetUserId: userId,
+    });
+
+    res.json({
+      success: true,
+      message: 'Join request rejected successfully',
     });
   } catch (err) {
     next(err);

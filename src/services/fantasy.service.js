@@ -80,7 +80,7 @@ exports.createLeague = async ({ userId, name, description, type, tenantId }) => 
   }
 };
 
-exports.joinLeague = async ({ leagueId, userId }) => {
+exports.joinLeague = async ({ leagueId, userId, inviteCode }) => {
   const leagueResult = await pool.query(
     `
     SELECT id, name, description, tenant_id, type, invite_code, created_by, created_at
@@ -117,15 +117,27 @@ exports.joinLeague = async ({ leagueId, userId }) => {
     }
 
     if (existing.status === 'pending') {
-      const error = new Error('You have already requested to join this league');
+      const error = new Error('You already have a pending request for this league');
       error.statusCode = 400;
       throw error;
     }
   }
 
-  const status = league.type === 'public' ? 'active' : 'pending';
-  const joinedAt = league.type === 'public' ? new Date() : null;
+  let status = 'pending';
+  let joinedAt = null;
   const role = 'member';
+
+  if (league.type === 'public') {
+    status = 'active';
+    joinedAt = new Date();
+  } else {
+    const cleanInviteCode = inviteCode?.trim();
+
+    if (cleanInviteCode && cleanInviteCode === league.invite_code) {
+      status = 'active';
+      joinedAt = new Date();
+    }
+  }
 
   const result = await pool.query(
     `
@@ -234,4 +246,146 @@ exports.getLeagueById = async (leagueId, userId) => {
     league,
     membership: membershipResult.rows[0] || null,
   };
+};
+
+exports.getLeagueRequests = async ({ leagueId, userId }) => {
+  const adminCheck = await pool.query(
+    `
+    SELECT id
+    FROM fantasy_league_members
+    WHERE league_id = $1 AND user_id = $2 AND role = 'admin' AND status = 'active'
+    `,
+    [leagueId, userId]
+  );
+
+  if (adminCheck.rows.length === 0) {
+    const error = new Error('Not authorized to view league requests');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  const result = await pool.query(
+    `
+    SELECT
+      flm.id,
+      flm.user_id,
+      flm.role,
+      flm.status,
+      flm.joined_at,
+      flm.total_points,
+      flm.created_at,
+      u.username,
+      u.email
+    FROM fantasy_league_members flm
+    INNER JOIN users u ON u.id = flm.user_id
+    WHERE flm.league_id = $1 AND flm.status = 'pending'
+    ORDER BY flm.created_at ASC
+    `,
+    [leagueId]
+  );
+
+  return result.rows;
+};
+
+exports.approveLeagueRequest = async ({ leagueId, adminUserId, targetUserId }) => {
+  const adminCheck = await pool.query(
+    `
+    SELECT id
+    FROM fantasy_league_members
+    WHERE league_id = $1 AND user_id = $2 AND role = 'admin' AND status = 'active'
+    `,
+    [leagueId, adminUserId]
+  );
+
+  if (adminCheck.rows.length === 0) {
+    const error = new Error('Not authorized to approve requests');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  const requestCheck = await pool.query(
+    `
+    SELECT id, status
+    FROM fantasy_league_members
+    WHERE league_id = $1 AND user_id = $2
+    `,
+    [leagueId, targetUserId]
+  );
+
+  if (requestCheck.rows.length === 0) {
+    const error = new Error('Join request not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const requestRow = requestCheck.rows[0];
+
+  if (requestRow.status !== 'pending') {
+    const error = new Error('This request is no longer pending');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const result = await pool.query(
+    `
+    UPDATE fantasy_league_members
+    SET status = 'active',
+        joined_at = CURRENT_TIMESTAMP
+    WHERE league_id = $1 AND user_id = $2
+    RETURNING id, league_id, user_id, role, status, joined_at, total_points, created_at
+    `,
+    [leagueId, targetUserId]
+  );
+
+  return result.rows[0];
+};
+
+exports.rejectLeagueRequest = async ({ leagueId, adminUserId, targetUserId }) => {
+  const adminCheck = await pool.query(
+    `
+    SELECT id
+    FROM fantasy_league_members
+    WHERE league_id = $1 AND user_id = $2 AND role = 'admin' AND status = 'active'
+    `,
+    [leagueId, adminUserId]
+  );
+
+  if (adminCheck.rows.length === 0) {
+    const error = new Error('Not authorized to reject requests');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  const requestCheck = await pool.query(
+    `
+    SELECT id, status
+    FROM fantasy_league_members
+    WHERE league_id = $1 AND user_id = $2
+    `,
+    [leagueId, targetUserId]
+  );
+
+  if (requestCheck.rows.length === 0) {
+    const error = new Error('Join request not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const requestRow = requestCheck.rows[0];
+
+  if (requestRow.status !== 'pending') {
+    const error = new Error('This request is no longer pending');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  await pool.query(
+    `
+    DELETE FROM fantasy_league_members
+    WHERE league_id = $1 AND user_id = $2
+    `,
+    [leagueId, targetUserId]
+  );
+
+  return { success: true };
 };
