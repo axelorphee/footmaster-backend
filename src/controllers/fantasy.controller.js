@@ -27,7 +27,7 @@ exports.joinLeague = async (req, res, next) => {
   try {
     const userId = req.user.id;
     const { leagueId } = req.params;
-    const { inviteCode } = req.body;
+    const { inviteCode } = req.body || {};
 
     const result = await fantasyService.joinLeague({
       leagueId,
