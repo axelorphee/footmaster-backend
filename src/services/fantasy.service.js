@@ -389,3 +389,187 @@ exports.rejectLeagueRequest = async ({ leagueId, adminUserId, targetUserId }) =>
 
   return { success: true };
 };
+
+exports.getTenantById = async (tenantId) => {
+  const result = await pool.query(
+    `
+    SELECT
+      tenant_id,
+      league_id,
+      season,
+      name,
+      logo,
+      country,
+      seeded,
+      created_at,
+      updated_at
+    FROM fantasy_tenants
+    WHERE tenant_id = $1
+    `,
+    [tenantId]
+  );
+
+  if (result.rows.length === 0) {
+    const error = new Error('Tenant not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  return result.rows[0];
+};
+
+exports.getTenantRules = async (tenantId) => {
+  const result = await pool.query(
+    `
+    SELECT
+      tenant_id,
+      budget_cap,
+      max_players_per_club,
+      allowed_formations,
+      created_at,
+      updated_at
+    FROM fantasy_rules
+    WHERE tenant_id = $1
+    `,
+    [tenantId]
+  );
+
+  if (result.rows.length === 0) {
+    const error = new Error('Fantasy rules not found for this tenant');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  return result.rows[0];
+};
+
+exports.getTenantGameweeks = async (tenantId) => {
+  const result = await pool.query(
+    `
+    SELECT
+      id,
+      tenant_id,
+      gw,
+      fixture_ids,
+      status,
+      start_utc,
+      end_utc,
+      deadline_utc,
+      created_at,
+      updated_at
+    FROM fantasy_gameweeks
+    WHERE tenant_id = $1
+    ORDER BY gw ASC
+    `,
+    [tenantId]
+  );
+
+  return result.rows;
+};
+
+exports.getTenantPlayers = async (tenantId, filters = {}) => {
+  const values = [tenantId];
+  const conditions = ['tenant_id = $1'];
+  let index = 2;
+
+  if (filters.position) {
+    conditions.push(`position = $${index}`);
+    values.push(filters.position);
+    index++;
+  }
+
+  if (filters.status) {
+    conditions.push(`status = $${index}`);
+    values.push(filters.status);
+    index++;
+  }
+
+  if (filters.teamId) {
+    conditions.push(`team_id = $${index}`);
+    values.push(filters.teamId);
+    index++;
+  }
+
+  if (filters.search) {
+    conditions.push(`LOWER(name) LIKE $${index}`);
+    values.push(`%${filters.search.toLowerCase()}%`);
+    index++;
+  }
+
+  const result = await pool.query(
+    `
+    SELECT
+      id,
+      tenant_id,
+      player_id,
+      team_id,
+      team_name,
+      name,
+      position,
+      price,
+      status,
+      photo_url,
+      created_at,
+      updated_at
+    FROM fantasy_players
+    WHERE ${conditions.join(' AND ')}
+    ORDER BY price ASC, name ASC
+    `,
+    values
+  );
+
+  return result.rows;
+};
+
+exports.getMySquadByGw = async ({ userId, tenantId, gw }) => {
+  const squadResult = await pool.query(
+    `
+    SELECT
+      id,
+      user_id,
+      tenant_id,
+      gw,
+      formation,
+      budget_cap,
+      max_players_per_club,
+      created_at,
+      updated_at
+    FROM fantasy_user_squads
+    WHERE user_id = $1 AND tenant_id = $2 AND gw = $3
+    `,
+    [userId, tenantId, gw]
+  );
+
+  if (squadResult.rows.length === 0) {
+    return null;
+  }
+
+  const squad = squadResult.rows[0];
+
+  const picksResult = await pool.query(
+    `
+    SELECT
+      id,
+      squad_id,
+      slot,
+      player_id,
+      is_captain,
+      is_vice,
+      is_bench,
+      position_snapshot,
+      team_id_snapshot,
+      price_snapshot,
+      created_at,
+      updated_at
+    FROM fantasy_user_squad_picks
+    WHERE squad_id = $1
+    ORDER BY slot ASC
+    `,
+    [squad.id]
+  );
+
+  return {
+    ...squad,
+    picks: picksResult.rows,
+  };
+};

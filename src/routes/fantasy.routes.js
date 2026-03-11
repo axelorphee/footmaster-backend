@@ -18,6 +18,20 @@ router.get(
   fantasyController.getLeagueRequests
 );
 
+router.get('/tenants/:tenantId', authMiddleware, fantasyController.getTenantById);
+
+router.get('/tenants/:tenantId/rules', authMiddleware, fantasyController.getTenantRules);
+
+router.get('/tenants/:tenantId/gameweeks', authMiddleware, fantasyController.getTenantGameweeks);
+
+router.get('/tenants/:tenantId/players', authMiddleware, fantasyController.getTenantPlayers);
+
+router.get(
+  '/tenants/:tenantId/squads/:gw/me',
+  authMiddleware,
+  fantasyController.getMySquadByGw
+);
+
 router.post(
   '/leagues',
   authMiddleware,
@@ -45,5 +59,7 @@ router.post(
   requireVerified,
   fantasyController.rejectLeagueRequest
 );
+
+
 
 module.exports = router;

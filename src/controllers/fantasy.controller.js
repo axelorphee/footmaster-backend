@@ -153,3 +153,89 @@ exports.rejectLeagueRequest = async (req, res, next) => {
     next(err);
   }
 };
+
+exports.getTenantById = async (req, res, next) => {
+  try {
+    const { tenantId } = req.params;
+
+    const tenant = await fantasyService.getTenantById(tenantId);
+
+    res.json({
+      success: true,
+      data: tenant,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+exports.getTenantRules = async (req, res, next) => {
+  try {
+    const { tenantId } = req.params;
+
+    const rules = await fantasyService.getTenantRules(tenantId);
+
+    res.json({
+      success: true,
+      data: rules,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+exports.getTenantGameweeks = async (req, res, next) => {
+  try {
+    const { tenantId } = req.params;
+
+    const gameweeks = await fantasyService.getTenantGameweeks(tenantId);
+
+    res.json({
+      success: true,
+      data: gameweeks,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+exports.getTenantPlayers = async (req, res, next) => {
+  try {
+    const { tenantId } = req.params;
+    const { position, status, teamId, search } = req.query;
+
+    const players = await fantasyService.getTenantPlayers(tenantId, {
+      position,
+      status,
+      teamId: teamId ? Number(teamId) : undefined,
+      search,
+    });
+
+    res.json({
+      success: true,
+      data: players,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+exports.getMySquadByGw = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { tenantId, gw } = req.params;
+
+    const squad = await fantasyService.getMySquadByGw({
+      userId,
+      tenantId,
+      gw: Number(gw),
+    });
+
+    res.json({
+      success: true,
+      data: squad,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
