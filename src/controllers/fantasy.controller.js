@@ -239,3 +239,27 @@ exports.getMySquadByGw = async (req, res, next) => {
     next(err);
   }
 };
+
+exports.saveMySquadByGw = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { tenantId, gw } = req.params;
+    const { formation, picks } = req.body || {};
+
+    const result = await fantasyService.saveMySquadByGw({
+      userId,
+      tenantId,
+      gw: Number(gw),
+      formation,
+      picks,
+    });
+
+    res.json({
+      success: true,
+      data: result,
+      message: 'Squad saved successfully',
+    });
+  } catch (err) {
+    next(err);
+  }
+};

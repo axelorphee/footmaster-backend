@@ -573,3 +573,334 @@ exports.getMySquadByGw = async ({ userId, tenantId, gw }) => {
     picks: picksResult.rows,
   };
 };
+
+exports.saveMySquadByGw = async ({ userId, tenantId, gw, formation, picks }) => {
+  if (!tenantId || !gw || !formation || !Array.isArray(picks)) {
+    const error = new Error('tenantId, gw, formation and picks are required');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (picks.length !== 15) {
+    const error = new Error('A squad must contain exactly 15 picks');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const tenantResult = await pool.query(
+    `
+    SELECT tenant_id
+    FROM fantasy_tenants
+    WHERE tenant_id = $1
+    `,
+    [tenantId]
+  );
+
+  if (tenantResult.rows.length === 0) {
+    const error = new Error('Tenant not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const rulesResult = await pool.query(
+    `
+    SELECT budget_cap, max_players_per_club, allowed_formations
+    FROM fantasy_rules
+    WHERE tenant_id = $1
+    `,
+    [tenantId]
+  );
+
+  if (rulesResult.rows.length === 0) {
+    const error = new Error('Fantasy rules not found for this tenant');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const rules = rulesResult.rows[0];
+  const budgetCap = Number(rules.budget_cap);
+  const maxPlayersPerClub = Number(rules.max_players_per_club);
+  const allowedFormations = Array.isArray(rules.allowed_formations)
+    ? rules.allowed_formations
+    : [];
+
+  if (!allowedFormations.includes(formation)) {
+    const error = new Error('Formation not allowed');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const gameweekResult = await pool.query(
+    `
+    SELECT gw, deadline_utc
+    FROM fantasy_gameweeks
+    WHERE tenant_id = $1 AND gw = $2
+    `,
+    [tenantId, gw]
+  );
+
+  if (gameweekResult.rows.length === 0) {
+    const error = new Error('Gameweek not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const gameweek = gameweekResult.rows[0];
+  if (gameweek.deadline_utc) {
+    const now = new Date();
+    const deadline = new Date(gameweek.deadline_utc);
+    if (now > deadline) {
+      const error = new Error('Deadline exceeded for this gameweek');
+      error.statusCode = 403;
+      throw error;
+    }
+  }
+
+  const seenSlots = new Set();
+  const seenPlayers = new Set();
+
+  let startersCount = 0;
+  let benchCount = 0;
+  let captainCount = 0;
+  let viceCount = 0;
+
+  for (const pick of picks) {
+    const slot = Number(pick.slot);
+    const playerId = pick.playerId != null ? Number(pick.playerId) : null;
+    const isCaptain = Boolean(pick.isCaptain);
+    const isVice = Boolean(pick.isVice);
+    const isBench = Boolean(pick.isBench);
+
+    if (!slot || slot < 1 || slot > 15) {
+      const error = new Error('Each pick must have a valid slot between 1 and 15');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    if (seenSlots.has(slot)) {
+      const error = new Error('Duplicate slot detected');
+      error.statusCode = 400;
+      throw error;
+    }
+    seenSlots.add(slot);
+
+    if (playerId == null) {
+      const error = new Error('Each pick must have a playerId');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    if (seenPlayers.has(playerId)) {
+      const error = new Error('Duplicate player detected in squad');
+      error.statusCode = 400;
+      throw error;
+    }
+    seenPlayers.add(playerId);
+
+    if (isBench) {
+      benchCount++;
+    } else {
+      startersCount++;
+      if (isCaptain) captainCount++;
+      if (isVice) viceCount++;
+    }
+
+    if (isCaptain && isVice) {
+      const error = new Error('A player cannot be captain and vice-captain at the same time');
+      error.statusCode = 400;
+      throw error;
+    }
+  }
+
+  if (startersCount !== 11 || benchCount !== 4) {
+    const error = new Error('Squad must contain 11 starters and 4 bench players');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (captainCount !== 1) {
+    const error = new Error('Squad must contain exactly one captain among starters');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (viceCount !== 1) {
+    const error = new Error('Squad must contain exactly one vice-captain among starters');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const playerIds = Array.from(seenPlayers);
+
+  const playersResult = await pool.query(
+    `
+    SELECT player_id, position, team_id, price, status
+    FROM fantasy_players
+    WHERE tenant_id = $1 AND player_id = ANY($2::int[])
+    `,
+    [tenantId, playerIds]
+  );
+
+  if (playersResult.rows.length !== 15) {
+    const error = new Error('Some selected players were not found in fantasy players');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const playersMap = new Map();
+  for (const row of playersResult.rows) {
+    playersMap.set(Number(row.player_id), row);
+  }
+
+  let totalPrice = 0;
+  const clubCounts = new Map();
+  let gk = 0, def = 0, mid = 0, fwd = 0;
+
+  for (const pick of picks) {
+    const playerId = Number(pick.playerId);
+    const isBench = Boolean(pick.isBench);
+    const player = playersMap.get(playerId);
+
+    if (!player) {
+      const error = new Error(`Player ${playerId} not found`);
+      error.statusCode = 400;
+      throw error;
+    }
+
+    if (player.status !== 'A') {
+      const error = new Error(`Player ${playerId} is not active`);
+      error.statusCode = 400;
+      throw error;
+    }
+
+    totalPrice += Number(player.price);
+
+    if (!isBench) {
+      const teamId = player.team_id != null ? Number(player.team_id) : null;
+      if (teamId != null) {
+        clubCounts.set(teamId, (clubCounts.get(teamId) || 0) + 1);
+        if (clubCounts.get(teamId) > maxPlayersPerClub) {
+          const error = new Error('Too many starting players from the same club');
+          error.statusCode = 400;
+          throw error;
+        }
+      }
+
+      if (player.position === 'GK') gk++;
+      if (player.position === 'DEF') def++;
+      if (player.position === 'MID') mid++;
+      if (player.position === 'FWD') fwd++;
+    }
+  }
+
+  if (totalPrice > budgetCap) {
+    const error = new Error('Budget exceeded');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const formationKey = `${def}-${mid}-${fwd}`;
+  if (gk !== 1 || formationKey !== formation) {
+    const error = new Error('Starting eleven does not match the selected formation');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const existingSquadResult = await client.query(
+      `
+      SELECT id
+      FROM fantasy_user_squads
+      WHERE user_id = $1 AND tenant_id = $2 AND gw = $3
+      `,
+      [userId, tenantId, gw]
+    );
+
+    let squadId;
+
+    if (existingSquadResult.rows.length === 0) {
+      const insertSquadResult = await client.query(
+        `
+        INSERT INTO fantasy_user_squads (
+          user_id, tenant_id, gw, formation, budget_cap, max_players_per_club, created_at, updated_at
+        )
+        VALUES ($1,$2,$3,$4,$5,$6,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
+        RETURNING id
+        `,
+        [userId, tenantId, gw, formation, budgetCap, maxPlayersPerClub]
+      );
+
+      squadId = insertSquadResult.rows[0].id;
+    } else {
+      squadId = existingSquadResult.rows[0].id;
+
+      await client.query(
+        `
+        UPDATE fantasy_user_squads
+        SET formation = $1,
+            budget_cap = $2,
+            max_players_per_club = $3,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = $4
+        `,
+        [formation, budgetCap, maxPlayersPerClub, squadId]
+      );
+
+      await client.query(
+        `
+        DELETE FROM fantasy_user_squad_picks
+        WHERE squad_id = $1
+        `,
+        [squadId]
+      );
+    }
+
+    for (const pick of picks) {
+      const playerId = Number(pick.playerId);
+      const player = playersMap.get(playerId);
+
+      await client.query(
+        `
+        INSERT INTO fantasy_user_squad_picks (
+          squad_id, slot, player_id, is_captain, is_vice, is_bench,
+          position_snapshot, team_id_snapshot, price_snapshot, created_at, updated_at
+        )
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
+        `,
+        [
+          squadId,
+          Number(pick.slot),
+          playerId,
+          Boolean(pick.isCaptain),
+          Boolean(pick.isVice),
+          Boolean(pick.isBench),
+          player.position,
+          player.team_id != null ? Number(player.team_id) : null,
+          Number(player.price),
+        ]
+      );
+    }
+
+    await client.query('COMMIT');
+
+    return {
+      squadId,
+      tenantId,
+      gw,
+      formation,
+      budgetCap,
+      maxPlayersPerClub,
+      totalPrice,
+      picksCount: picks.length,
+    };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+};

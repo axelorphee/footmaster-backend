@@ -33,6 +33,13 @@ router.get(
 );
 
 router.post(
+  '/tenants/:tenantId/squads/:gw/me',
+  authMiddleware,
+  requireVerified,
+  fantasyController.saveMySquadByGw
+);
+
+router.post(
   '/leagues',
   authMiddleware,
   requireVerified,
