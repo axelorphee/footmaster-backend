@@ -263,3 +263,45 @@ exports.saveMySquadByGw = async (req, res, next) => {
     next(err);
   }
 };
+
+exports.upsertFantasyPlayerGwPoints = async (req, res, next) => {
+  try {
+    const { tenantId, gw } = req.params;
+    const { statsByPlayerId } = req.body || {};
+
+    const result = await fantasyService.upsertFantasyPlayerGwPointsFromStats({
+      tenantId,
+      gw: Number(gw),
+      statsByPlayerId,
+    });
+
+    res.json({
+      success: true,
+      data: result,
+      message: 'Fantasy player GW points upserted successfully',
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+exports.calculateMySquadGwPoints = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { tenantId, gw } = req.params;
+
+    const result = await fantasyService.calculateMySquadGwPoints({
+      userId,
+      tenantId,
+      gw: Number(gw),
+    });
+
+    res.json({
+      success: true,
+      data: result,
+      message: 'Fantasy squad GW points calculated successfully',
+    });
+  } catch (err) {
+    next(err);
+  }
+};

@@ -904,3 +904,374 @@ exports.saveMySquadByGw = async ({ userId, tenantId, gw, formation, picks }) => 
     client.release();
   }
 };
+
+function fantasyInt(value, def = 0) {
+  if (typeof value === 'number') return Math.trunc(value);
+  if (typeof value === 'string' && value.trim() !== '' && !Number.isNaN(Number(value))) {
+    return Math.trunc(Number(value));
+  }
+  return def;
+}
+
+function fantasyBoolOrNumGt0(value) {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value > 0;
+  if (typeof value === 'string') {
+    const v = value.trim().toLowerCase();
+    return v === 'true' || v === '1';
+  }
+  return false;
+}
+
+function calculatePlayerFantasyPoints({ pos, stat, rules }) {
+  let pts = 0.0;
+
+  const minutes = fantasyInt(stat.minutes);
+  const played = minutes > 0;
+  const played60 = minutes >= 60;
+
+  const goals = fantasyInt(stat.goals);
+  const assists = fantasyInt(stat.assists);
+  const conceded = fantasyInt(stat.goals_conceded);
+  const isCs = fantasyBoolOrNumGt0(stat.clean_sheet);
+
+  const ycCount = fantasyInt(stat.yellow);
+  const rcCount = fantasyInt(stat.red);
+  const ownGoals = fantasyInt(stat.own_goals);
+  const pensMiss = fantasyInt(stat.penalties_missed);
+  const pensSaved = fantasyInt(stat.penalties_saved);
+  const saves = fantasyInt(stat.saves);
+
+  const goalByPos = rules.goal || {};
+  const csByPos = rules.cs || {};
+  const gcRule = rules.goals_conceded || {};
+  const savesRule = rules.saves || {};
+
+  if (played) pts += Number(rules.appearance ?? 1);
+  if (played60) pts += Number(rules.appearance90 ?? 2);
+
+  pts += goals * Number(goalByPos[pos] ?? 0);
+  pts += assists * Number(rules.assist ?? 3);
+
+  if (played && (isCs || conceded === 0)) {
+    pts += Number(csByPos[pos] ?? 0);
+  }
+
+  if (conceded > 0) {
+    const per = fantasyInt(gcRule.per, 1);
+    const malus = Number(gcRule[pos] ?? 0);
+    if (per > 0 && malus !== 0) {
+      pts += Math.trunc(conceded / per) * malus;
+    }
+  }
+
+  pts += pensMiss * Number(rules.penalty_missed ?? -2);
+
+  if (pos === 'GK') {
+    pts += pensSaved * Number(rules.penalty_saved ?? 5);
+    const every = fantasyInt(savesRule.every, 3);
+    const inc = Number(savesRule[pos] ?? 1);
+    if (every > 0 && inc !== 0) {
+      pts += Math.trunc(saves / every) * inc;
+    }
+  }
+
+  pts += ycCount * Number(rules.yellow ?? -1);
+  pts += rcCount * Number(rules.red ?? -3);
+  pts += ownGoals * Number(rules.own_goal ?? -2);
+
+  return Number(pts.toFixed(2));
+}
+
+exports.getDefaultFantasyScoringRules = () => {
+  return {
+    captain_multiplier: 2,
+    vice_if_captain_dnp: true,
+    appearance: 1,
+    appearance90: 2,
+    assist: 3,
+    yellow: -1,
+    red: -3,
+    own_goal: -2,
+    penalty_missed: -2,
+    penalty_saved: 5,
+    goal: { GK: 6, DEF: 6, MID: 5, FWD: 4 },
+    cs: { GK: 4, DEF: 4, MID: 1, FWD: 0 },
+    goals_conceded: { per: 2, GK: -1, DEF: -1, MID: -0.5, FWD: -0.25 },
+    saves: { every: 3, GK: 1 }
+  };
+};
+
+exports.loadFantasyScoringRules = async (tenantId) => {
+  const rulesResult = await pool.query(
+    `
+    SELECT tenant_id, budget_cap, max_players_per_club, allowed_formations
+    FROM fantasy_rules
+    WHERE tenant_id = $1
+    `,
+    [tenantId]
+  );
+
+  if (rulesResult.rows.length === 0) {
+    const error = new Error('Fantasy rules not found for this tenant');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const dbRules = rulesResult.rows[0];
+  const defaults = exports.getDefaultFantasyScoringRules();
+
+  return {
+    ...defaults,
+    budget_cap: Number(dbRules.budget_cap),
+    max_players_per_club: Number(dbRules.max_players_per_club),
+    allowed_formations: Array.isArray(dbRules.allowed_formations) ? dbRules.allowed_formations : []
+  };
+};
+
+exports.calculateMySquadGwPoints = async ({ userId, tenantId, gw }) => {
+  const squadResult = await pool.query(
+    `
+    SELECT id, user_id, tenant_id, gw, formation
+    FROM fantasy_user_squads
+    WHERE user_id = $1 AND tenant_id = $2 AND gw = $3
+    `,
+    [userId, tenantId, gw]
+  );
+
+  if (squadResult.rows.length === 0) {
+    const error = new Error('Squad not found for this gameweek');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const squad = squadResult.rows[0];
+
+  const picksResult = await pool.query(
+    `
+    SELECT
+      slot,
+      player_id,
+      is_captain,
+      is_vice,
+      is_bench,
+      position_snapshot,
+      team_id_snapshot,
+      price_snapshot
+    FROM fantasy_user_squad_picks
+    WHERE squad_id = $1
+    ORDER BY slot ASC
+    `,
+    [squad.id]
+  );
+
+  const picks = picksResult.rows;
+  if (picks.length !== 15) {
+    const error = new Error('Squad picks are incomplete');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const rules = await exports.loadFantasyScoringRules(tenantId);
+
+  const playerIds = picks.map((p) => Number(p.player_id));
+
+  const playerPointsResult = await pool.query(
+    `
+    SELECT player_id, points, breakdown
+    FROM fantasy_player_gw_points
+    WHERE tenant_id = $1 AND gw = $2 AND player_id = ANY($3::int[])
+    `,
+    [tenantId, gw, playerIds]
+  );
+
+  const pointsMap = new Map();
+  for (const row of playerPointsResult.rows) {
+    pointsMap.set(Number(row.player_id), {
+      points: Number(row.points),
+      breakdown: row.breakdown || {}
+    });
+  }
+
+  let basePoints = 0;
+  let captainBonus = 0;
+  let viceBonus = 0;
+
+  const perPlayer = [];
+  const starters = picks.filter((p) => !p.is_bench);
+
+  for (const pick of starters) {
+    const pid = Number(pick.player_id);
+    const playerPoints = pointsMap.get(pid);
+    const pts = playerPoints ? Number(playerPoints.points) : 0;
+
+    basePoints += pts;
+
+    perPlayer.push({
+      slot: Number(pick.slot),
+      player_id: pid,
+      is_captain: Boolean(pick.is_captain),
+      is_vice: Boolean(pick.is_vice),
+      is_bench: Boolean(pick.is_bench),
+      points: pts,
+      breakdown: playerPoints ? playerPoints.breakdown : {}
+    });
+  }
+
+  const captainMultiplier = Number(rules.captain_multiplier ?? 2);
+  const viceIfCaptainDnp = Boolean(rules.vice_if_captain_dnp ?? true);
+
+  const captainPick = starters.find((p) => Boolean(p.is_captain));
+  const vicePick = starters.find((p) => Boolean(p.is_vice));
+
+  const captainPoints = captainPick
+    ? Number(pointsMap.get(Number(captainPick.player_id))?.points ?? 0)
+    : 0;
+
+  if (captainPick && captainPoints > 0) {
+    captainBonus = Number(((captainMultiplier - 1) * captainPoints).toFixed(2));
+  } else if (viceIfCaptainDnp && vicePick) {
+    const vicePoints = Number(pointsMap.get(Number(vicePick.player_id))?.points ?? 0);
+    if (vicePoints > 0) {
+      viceBonus = Number(((captainMultiplier - 1) * vicePoints).toFixed(2));
+    }
+  }
+
+  const totalPoints = Number((basePoints + captainBonus + viceBonus).toFixed(2));
+
+  const breakdown = {
+    per_player: perPlayer,
+    captain_multiplier: captainMultiplier,
+    vice_if_captain_dnp: viceIfCaptainDnp
+  };
+
+  const upsertResult = await pool.query(
+    `
+    INSERT INTO fantasy_user_squad_gw_points (
+      squad_id, tenant_id, user_id, gw, base_points, captain_bonus, vice_bonus, total_points, breakdown, created_at, updated_at
+    )
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
+    ON CONFLICT (squad_id, gw)
+    DO UPDATE SET
+      base_points = EXCLUDED.base_points,
+      captain_bonus = EXCLUDED.captain_bonus,
+      vice_bonus = EXCLUDED.vice_bonus,
+      total_points = EXCLUDED.total_points,
+      breakdown = EXCLUDED.breakdown,
+      updated_at = CURRENT_TIMESTAMP
+    RETURNING *
+    `,
+    [
+      squad.id,
+      tenantId,
+      userId,
+      gw,
+      basePoints,
+      captainBonus,
+      viceBonus,
+      totalPoints,
+      JSON.stringify(breakdown)
+    ]
+  );
+
+  return upsertResult.rows[0];
+};
+
+exports.upsertFantasyPlayerGwPointsFromStats = async ({ tenantId, gw, statsByPlayerId }) => {
+  if (!tenantId || !gw || !statsByPlayerId || typeof statsByPlayerId !== 'object') {
+    const error = new Error('tenantId, gw and statsByPlayerId are required');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const rules = await exports.loadFantasyScoringRules(tenantId);
+
+  const playerIds = Object.keys(statsByPlayerId)
+    .map((id) => Number(id))
+    .filter((id) => !Number.isNaN(id));
+
+  if (playerIds.length === 0) {
+    return {
+      tenantId,
+      gw,
+      processed: 0,
+    };
+  }
+
+  const playersResult = await pool.query(
+    `
+    SELECT player_id, position
+    FROM fantasy_players
+    WHERE tenant_id = $1 AND player_id = ANY($2::int[])
+    `,
+    [tenantId, playerIds]
+  );
+
+  const posMap = new Map();
+  for (const row of playersResult.rows) {
+    posMap.set(Number(row.player_id), row.position);
+  }
+
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    let processed = 0;
+
+    for (const rawId of Object.keys(statsByPlayerId)) {
+      const playerId = Number(rawId);
+      if (Number.isNaN(playerId)) continue;
+
+      const stat = statsByPlayerId[rawId] || {};
+      const pos = posMap.get(playerId) || 'MID';
+
+      const points = calculatePlayerFantasyPoints({
+        pos,
+        stat,
+        rules,
+      });
+
+      const breakdown = {
+        pos,
+        stat,
+      };
+
+      await client.query(
+        `
+        INSERT INTO fantasy_player_gw_points (
+          tenant_id, gw, player_id, points, breakdown, created_at, updated_at
+        )
+        VALUES ($1,$2,$3,$4,$5::jsonb,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
+        ON CONFLICT (tenant_id, gw, player_id)
+        DO UPDATE SET
+          points = EXCLUDED.points,
+          breakdown = EXCLUDED.breakdown,
+          updated_at = CURRENT_TIMESTAMP
+        `,
+        [
+          tenantId,
+          gw,
+          playerId,
+          points,
+          JSON.stringify(breakdown),
+        ]
+      );
+
+      processed++;
+    }
+
+    await client.query('COMMIT');
+
+    return {
+      tenantId,
+      gw,
+      processed,
+    };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+};

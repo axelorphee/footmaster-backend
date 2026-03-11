@@ -40,6 +40,20 @@ router.post(
 );
 
 router.post(
+  '/tenants/:tenantId/gameweeks/:gw/player-points',
+  authMiddleware,
+  requireVerified,
+  fantasyController.upsertFantasyPlayerGwPoints
+);
+
+router.post(
+  '/tenants/:tenantId/gameweeks/:gw/my-points/calculate',
+  authMiddleware,
+  requireVerified,
+  fantasyController.calculateMySquadGwPoints
+);
+
+router.post(
   '/leagues',
   authMiddleware,
   requireVerified,
