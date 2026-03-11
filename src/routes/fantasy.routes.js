@@ -54,6 +54,13 @@ router.post(
 );
 
 router.post(
+  '/tenants/:tenantId/my-total-points/sync',
+  authMiddleware,
+  requireVerified,
+  fantasyController.syncMyTotalPointsForTenantLeagues
+);
+
+router.post(
   '/leagues',
   authMiddleware,
   requireVerified,

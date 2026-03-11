@@ -1275,3 +1275,43 @@ exports.upsertFantasyPlayerGwPointsFromStats = async ({ tenantId, gw, statsByPla
     client.release();
   }
 };
+
+exports.syncUserTotalPointsForTenantLeagues = async ({ userId, tenantId }) => {
+  if (!userId || !tenantId) {
+    const error = new Error('userId and tenantId are required');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const totalResult = await pool.query(
+    `
+    SELECT COALESCE(SUM(total_points), 0) AS total_points
+    FROM fantasy_user_squad_gw_points
+    WHERE user_id = $1 AND tenant_id = $2
+    `,
+    [userId, tenantId]
+  );
+
+  const totalPoints = Number(totalResult.rows[0]?.total_points ?? 0);
+
+  const updateResult = await pool.query(
+    `
+    UPDATE fantasy_league_members flm
+    SET total_points = $1
+    FROM fantasy_leagues fl
+    WHERE flm.league_id = fl.id
+      AND flm.user_id = $2
+      AND fl.tenant_id = $3
+      AND flm.status = 'active'
+    RETURNING flm.id, flm.league_id, flm.user_id, flm.total_points
+    `,
+    [totalPoints, userId, tenantId]
+  );
+
+  return {
+    userId,
+    tenantId,
+    totalPoints,
+    updatedMemberships: updateResult.rows.length,
+  };
+};

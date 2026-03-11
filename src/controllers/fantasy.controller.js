@@ -305,3 +305,23 @@ exports.calculateMySquadGwPoints = async (req, res, next) => {
     next(err);
   }
 };
+
+exports.syncMyTotalPointsForTenantLeagues = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { tenantId } = req.params;
+
+    const result = await fantasyService.syncUserTotalPointsForTenantLeagues({
+      userId,
+      tenantId,
+    });
+
+    res.json({
+      success: true,
+      data: result,
+      message: 'League total points synced successfully',
+    });
+  } catch (err) {
+    next(err);
+  }
+};
