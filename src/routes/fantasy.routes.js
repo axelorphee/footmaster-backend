@@ -12,6 +12,12 @@ router.get('/leagues/my', authMiddleware, fantasyController.getMyLeagues);
 router.get('/leagues/:leagueId', authMiddleware, fantasyController.getLeagueById);
 
 router.get(
+  '/leagues/:leagueId/standings',
+  authMiddleware,
+  fantasyController.getLeagueStandings
+);
+
+router.get(
   '/leagues/:leagueId/requests',
   authMiddleware,
   requireVerified,

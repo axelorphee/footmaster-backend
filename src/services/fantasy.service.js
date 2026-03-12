@@ -1336,3 +1336,78 @@ exports.syncUserTotalPointsForTenantLeagues = async ({ userId, tenantId }) => {
     updatedMemberships: updateResult.rows.length,
   };
 };
+
+exports.getLeagueStandings = async ({ leagueId, userId }) => {
+  const membershipCheck = await pool.query(
+    `
+    SELECT flm.id, flm.role, flm.status
+    FROM fantasy_league_members flm
+    WHERE flm.league_id = $1 AND flm.user_id = $2
+    `,
+    [leagueId, userId]
+  );
+
+  if (membershipCheck.rows.length === 0) {
+    const error = new Error('You are not a member of this league');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  const membership = membershipCheck.rows[0];
+
+  if (membership.status !== 'active') {
+    const error = new Error('Your membership is not active in this league');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  const leagueResult = await pool.query(
+    `
+    SELECT id, name, description, tenant_id, type, invite_code, created_by, created_at
+    FROM fantasy_leagues
+    WHERE id = $1
+    `,
+    [leagueId]
+  );
+
+  if (leagueResult.rows.length === 0) {
+    const error = new Error('League not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const standingsResult = await pool.query(
+    `
+    SELECT
+      flm.user_id,
+      u.username,
+      u.email,
+      flm.role,
+      flm.status,
+      flm.joined_at,
+      flm.total_points
+    FROM fantasy_league_members flm
+    INNER JOIN users u ON u.id = flm.user_id
+    WHERE flm.league_id = $1
+      AND flm.status = 'active'
+    ORDER BY flm.total_points DESC, flm.joined_at ASC NULLS LAST, u.username ASC
+    `,
+    [leagueId]
+  );
+
+  const standings = standingsResult.rows.map((row, index) => ({
+    rank: index + 1,
+    user_id: row.user_id,
+    username: row.username,
+    email: row.email,
+    role: row.role,
+    status: row.status,
+    joined_at: row.joined_at,
+    total_points: Number(row.total_points ?? 0),
+  }));
+
+  return {
+    league: leagueResult.rows[0],
+    standings,
+  };
+};

@@ -325,3 +325,22 @@ exports.syncMyTotalPointsForTenantLeagues = async (req, res, next) => {
     next(err);
   }
 };
+
+exports.getLeagueStandings = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { leagueId } = req.params;
+
+    const result = await fantasyService.getLeagueStandings({
+      leagueId,
+      userId,
+    });
+
+    res.json({
+      success: true,
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
