@@ -363,3 +363,24 @@ exports.fetchAndUpsertFantasyPlayerGwPoints = async (req, res, next) => {
     next(err);
   }
 };
+
+exports.runMyGwPointsPipeline = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { tenantId, gw } = req.params;
+
+    const result = await fantasyService.runMyGwPointsPipeline({
+      userId,
+      tenantId,
+      gw: Number(gw),
+    });
+
+    res.json({
+      success: true,
+      data: result,
+      message: 'Fantasy GW points pipeline completed successfully',
+    });
+  } catch (err) {
+    next(err);
+  }
+};

@@ -67,6 +67,13 @@ router.post(
 );
 
 router.post(
+  '/tenants/:tenantId/gameweeks/:gw/my-points/run',
+  authMiddleware,
+  requireVerified,
+  fantasyController.runMyGwPointsPipeline
+);
+
+router.post(
   '/tenants/:tenantId/my-total-points/sync',
   authMiddleware,
   requireVerified,

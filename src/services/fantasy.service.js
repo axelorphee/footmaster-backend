@@ -1501,3 +1501,29 @@ exports.fetchAndUpsertFantasyPlayerGwPoints = async ({ tenantId, gw }) => {
     fixturesProcessed: fixtureIds.length,
   };
 };
+
+exports.runMyGwPointsPipeline = async ({ userId, tenantId, gw }) => {
+  const fetchResult = await exports.fetchAndUpsertFantasyPlayerGwPoints({
+    tenantId,
+    gw,
+  });
+
+  const squadPointsResult = await exports.calculateMySquadGwPoints({
+    userId,
+    tenantId,
+    gw,
+  });
+
+  const syncResult = await exports.syncUserTotalPointsForTenantLeagues({
+    userId,
+    tenantId,
+  });
+
+  return {
+    tenantId,
+    gw,
+    fetch: fetchResult,
+    squad_points: squadPointsResult,
+    sync: syncResult,
+  };
+};
