@@ -33,10 +33,31 @@ exports.createLeague = async ({ userId, name, description, type, tenantId }) => 
   const cleanName = name?.trim();
   const cleanDescription = description?.trim() || '';
   const cleanType = type === 'private' ? 'private' : 'public';
-  const cleanTenantId = tenantId?.trim() || 'default';
+  const cleanTenantId = tenantId?.trim();
 
   if (!cleanName) {
     const error = new Error('League name is required');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (!cleanTenantId) {
+    const error = new Error('tenantId is required');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const tenantCheck = await pool.query(
+    `
+    SELECT tenant_id
+    FROM fantasy_tenants
+    WHERE tenant_id = $1
+    `,
+    [cleanTenantId]
+  );
+
+  if (tenantCheck.rows.length === 0) {
+    const error = new Error('Invalid tenantId: tenant not found');
     error.statusCode = 400;
     throw error;
   }
