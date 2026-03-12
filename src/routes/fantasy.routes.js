@@ -60,6 +60,13 @@ router.post(
 );
 
 router.post(
+  '/tenants/:tenantId/gameweeks/:gw/player-points/fetch',
+  authMiddleware,
+  requireVerified,
+  fantasyController.fetchAndUpsertFantasyPlayerGwPoints
+);
+
+router.post(
   '/tenants/:tenantId/my-total-points/sync',
   authMiddleware,
   requireVerified,

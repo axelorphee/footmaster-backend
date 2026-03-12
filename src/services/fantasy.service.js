@@ -1,5 +1,15 @@
 const pool = require('../config/database');
 
+const axios = require('axios');
+
+const rapidApi = axios.create({
+  baseURL: 'https://api-football-v1.p.rapidapi.com/v3',
+  headers: {
+    'X-RapidAPI-Key': process.env.RAPIDAPI_KEY,
+    'X-RapidAPI-Host': process.env.RAPIDAPI_HOST,
+  },
+});
+
 function generateInviteCode(length = 6) {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
   let code = '';
@@ -1409,5 +1419,85 @@ exports.getLeagueStandings = async ({ leagueId, userId }) => {
   return {
     league: leagueResult.rows[0],
     standings,
+  };
+};
+
+exports.fetchAndUpsertFantasyPlayerGwPoints = async ({ tenantId, gw }) => {
+  const gameweekResult = await pool.query(
+    `
+    SELECT fixture_ids
+    FROM fantasy_gameweeks
+    WHERE tenant_id = $1 AND gw = $2
+    `,
+    [tenantId, gw]
+  );
+
+  if (gameweekResult.rows.length === 0) {
+    const error = new Error('Gameweek not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const fixtureIds = Array.isArray(gameweekResult.rows[0].fixture_ids)
+    ? gameweekResult.rows[0].fixture_ids
+    : [];
+
+  if (fixtureIds.length === 0) {
+    return {
+      tenantId,
+      gw,
+      processed: 0,
+      fixturesProcessed: 0,
+    };
+  }
+
+  const statsByPlayerId = {};
+
+  for (const fixtureId of fixtureIds) {
+    const resp = await rapidApi.get('/fixtures/players', {
+      params: { fixture: fixtureId },
+    });
+
+    const response = resp.data?.response || [];
+
+    for (const teamBlock of response) {
+      const players = Array.isArray(teamBlock.players) ? teamBlock.players : [];
+
+      for (const p of players) {
+        const pid = Number(p?.player?.id);
+        if (!pid) continue;
+
+        const stat = Array.isArray(p.statistics) && p.statistics.length > 0
+          ? p.statistics[0]
+          : {};
+
+        statsByPlayerId[pid] = {
+          minutes: stat?.games?.minutes ?? 0,
+          goals: stat?.goals?.total ?? 0,
+          assists: stat?.goals?.assists ?? 0,
+          yellow: stat?.cards?.yellow ?? 0,
+          red: stat?.cards?.red ?? 0,
+          clean_sheet: (stat?.goals?.conceded ?? 0) === 0,
+          goals_conceded: stat?.goals?.conceded ?? 0,
+          own_goals: stat?.goals?.owngoal ?? 0,
+          penalties_missed: stat?.penalty?.missed ?? 0,
+          penalties_saved: stat?.penalty?.saved ?? 0,
+          saves: stat?.goals?.saves ?? 0,
+        };
+      }
+    }
+  }
+
+  const upsertResult = await exports.upsertFantasyPlayerGwPointsFromStats({
+    tenantId,
+    gw,
+    statsByPlayerId,
+  });
+
+  return {
+    tenantId,
+    gw,
+    processed: upsertResult.processed,
+    fixturesProcessed: fixtureIds.length,
   };
 };

@@ -344,3 +344,22 @@ exports.getLeagueStandings = async (req, res, next) => {
     next(err);
   }
 };
+
+exports.fetchAndUpsertFantasyPlayerGwPoints = async (req, res, next) => {
+  try {
+    const { tenantId, gw } = req.params;
+
+    const result = await fantasyService.fetchAndUpsertFantasyPlayerGwPoints({
+      tenantId,
+      gw: Number(gw),
+    });
+
+    res.json({
+      success: true,
+      data: result,
+      message: 'Fantasy player GW points fetched and upserted successfully',
+    });
+  } catch (err) {
+    next(err);
+  }
+};
