@@ -513,6 +513,10 @@ exports.getTenantPlayers = async (tenantId, filters = {}) => {
     conditions.push(`status = $${index}`);
     values.push(filters.status);
     index++;
+  } else {
+    conditions.push(`status = $${index}`);
+    values.push('A');
+    index++;
   }
 
   if (filters.teamId) {
