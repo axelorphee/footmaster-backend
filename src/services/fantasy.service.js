@@ -607,24 +607,6 @@ exports.removeLeagueMember = async ({ leagueId, actorUserId, targetUserId }) => 
 
 
 
-  await createFantasyNotification({
-    userId: targetUserId,
-    leagueId: leagueId,
-    type: 'removed_from_league',
-    title: 'Retiré d’une ligue',
-    message: `Tu as été retiré de la ligue ${league.name} par un administrateur.`,
-  });
-
-  return {
-    leagueId,
-    actorUserId,
-    targetUserId,
-    removed: true,
-    previousStatus: target.status,
-    mode: 'admin_remove_member',
-  };
-
-
 exports.approveLeagueRequest = async ({ leagueId, adminUserId, targetUserId }) => {
   const adminCheck = await pool.query(
     `
