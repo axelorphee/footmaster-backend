@@ -392,6 +392,100 @@ exports.getLeagueRequests = async ({ leagueId, userId }) => {
   return result.rows;
 };
 
+exports.removeLeagueMember = async ({ leagueId, actorUserId, targetUserId }) => {
+  const actorResult = await pool.query(
+    `
+    SELECT id, role, status
+    FROM fantasy_league_members
+    WHERE league_id = $1 AND user_id = $2
+    `,
+    [leagueId, actorUserId]
+  );
+
+  if (actorResult.rows.length === 0) {
+    const error = new Error('You are not a member of this league');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  const actor = actorResult.rows[0];
+
+  const targetResult = await pool.query(
+    `
+    SELECT id, role, status
+    FROM fantasy_league_members
+    WHERE league_id = $1 AND user_id = $2
+    `,
+    [leagueId, targetUserId]
+  );
+
+  if (targetResult.rows.length === 0) {
+    const error = new Error('Target member not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const target = targetResult.rows[0];
+
+  const isSelf = actorUserId === targetUserId;
+  const isActorAdmin = actor.role === 'admin';
+  const isTargetAdmin = target.role === 'admin';
+
+  if (isSelf) {
+    if (actor.role === 'admin') {
+      const error = new Error('League admin cannot remove themselves');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    await pool.query(
+      `
+      DELETE FROM fantasy_league_members
+      WHERE league_id = $1 AND user_id = $2
+      `,
+      [leagueId, targetUserId]
+    );
+
+    return {
+      leagueId,
+      actorUserId,
+      targetUserId,
+      removed: true,
+      previousStatus: target.status,
+      mode: target.status === 'pending' ? 'cancel_pending' : 'self_remove',
+    };
+  }
+
+  if (!isActorAdmin) {
+    const error = new Error('Only league admin can remove another member');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  if (isTargetAdmin) {
+    const error = new Error('Admin cannot remove another admin');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  await pool.query(
+    `
+    DELETE FROM fantasy_league_members
+    WHERE league_id = $1 AND user_id = $2
+    `,
+    [leagueId, targetUserId]
+  );
+
+  return {
+    leagueId,
+    actorUserId,
+    targetUserId,
+    removed: true,
+    previousStatus: target.status,
+    mode: 'admin_remove_member',
+  };
+};
+
 exports.approveLeagueRequest = async ({ leagueId, adminUserId, targetUserId }) => {
   const adminCheck = await pool.query(
     `

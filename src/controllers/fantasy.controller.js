@@ -105,6 +105,28 @@ exports.getMyLeagues = async (req, res, next) => {
   }
 };
 
+exports.removeLeagueMember = async (req, res, next) => {
+  try {
+    const actorUserId = req.user.id;
+    const { leagueId, userId } = req.params;
+
+    const result = await fantasyService.removeLeagueMember({
+      leagueId,
+      actorUserId,
+      targetUserId: userId,
+    });
+
+    res.json({
+      success: true,
+      data: result,
+      message: 'League member removed successfully',
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+
 exports.getPublicLeagues = async (req, res, next) => {
   try {
     const leagues = await fantasyService.getPublicLeagues();

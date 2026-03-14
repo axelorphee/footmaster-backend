@@ -108,6 +108,13 @@ router.delete(
   fantasyController.leaveLeague
 );
 
+router.delete(
+  '/leagues/:leagueId/members/:userId',
+  authMiddleware,
+  requireVerified,
+  fantasyController.removeLeagueMember
+);
+
 router.post(
   '/leagues/:leagueId/requests/:userId/approve',
   authMiddleware,
