@@ -70,6 +70,26 @@ exports.joinLeagueByCode = async (req, res, next) => {
   }
 };
 
+exports.leaveLeague = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { leagueId } = req.params;
+
+    const result = await fantasyService.leaveLeague({
+      leagueId,
+      userId,
+    });
+
+    res.json({
+      success: true,
+      data: result,
+      message: 'League left successfully',
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
 exports.getMyLeagues = async (req, res, next) => {
   try {
     const userId = req.user.id;

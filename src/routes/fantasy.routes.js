@@ -101,6 +101,13 @@ router.post(
   fantasyController.joinLeagueByCode
 );
 
+router.delete(
+  '/leagues/:leagueId/me',
+  authMiddleware,
+  requireVerified,
+  fantasyController.leaveLeague
+);
+
 router.post(
   '/leagues/:leagueId/requests/:userId/approve',
   authMiddleware,

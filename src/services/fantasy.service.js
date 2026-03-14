@@ -219,6 +219,46 @@ exports.joinLeagueByCode = async ({ userId, inviteCode }) => {
   });
 };
 
+exports.leaveLeague = async ({ leagueId, userId }) => {
+  const memberResult = await pool.query(
+    `
+    SELECT id, role, status
+    FROM fantasy_league_members
+    WHERE league_id = $1 AND user_id = $2
+    `,
+    [leagueId, userId]
+  );
+
+  if (memberResult.rows.length === 0) {
+    const error = new Error('You are not a member of this league');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const member = memberResult.rows[0];
+
+  if (member.role === 'admin') {
+    const error = new Error('League admin cannot leave the league');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  await pool.query(
+    `
+    DELETE FROM fantasy_league_members
+    WHERE league_id = $1 AND user_id = $2
+    `,
+    [leagueId, userId]
+  );
+
+  return {
+    leagueId,
+    userId,
+    previousStatus: member.status,
+    removed: true,
+  };
+};
+
 exports.getMyLeagues = async (userId) => {
   const result = await pool.query(
     `
