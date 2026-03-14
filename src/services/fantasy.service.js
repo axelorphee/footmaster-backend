@@ -270,6 +270,34 @@ exports.leaveLeague = async ({ leagueId, userId }) => {
     throw error;
   }
 
+  const leagueResult = await pool.query(
+    `
+    SELECT id, name
+    FROM fantasy_leagues
+    WHERE id = $1
+    `,
+    [leagueId]
+  );
+
+  if (leagueResult.rows.length === 0) {
+    const error = new Error('League not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const league = leagueResult.rows[0];
+
+  const userResult = await pool.query(
+    `
+    SELECT username
+    FROM users
+    WHERE id = $1
+    `,
+    [userId]
+  );
+
+  const username = userResult.rows[0]?.username || 'Un utilisateur';
+
   await pool.query(
     `
     DELETE FROM fantasy_league_members
@@ -277,6 +305,28 @@ exports.leaveLeague = async ({ leagueId, userId }) => {
     `,
     [leagueId, userId]
   );
+
+  if (member.status === 'active') {
+    const membersToNotifyResult = await pool.query(
+      `
+      SELECT user_id
+      FROM fantasy_league_members
+      WHERE league_id = $1
+        AND status = 'active'
+      `,
+      [leagueId]
+    );
+
+    for (const row of membersToNotifyResult.rows) {
+      await createFantasyNotification({
+        userId: row.user_id,
+        leagueId: leagueId,
+        type: 'member_left',
+        title: 'Un membre a quitté la ligue',
+        message: `${username} a quitté la ligue ${league.name}.`,
+      });
+    }
+  }
 
   return {
     leagueId,
@@ -471,15 +521,6 @@ exports.removeLeagueMember = async ({ leagueId, actorUserId, targetUserId }) => 
 
   const league = leagueResult.rows[0];
 
-  const actorUserResult = await pool.query(
-    `
-    SELECT username
-    FROM users
-    WHERE id = $1
-    `,
-    [actorUserId]
-  );
-
   const targetUserResult = await pool.query(
     `
     SELECT username
@@ -489,7 +530,6 @@ exports.removeLeagueMember = async ({ leagueId, actorUserId, targetUserId }) => 
     [targetUserId]
   );
 
-  const actorUsername = actorUserResult.rows[0]?.username || 'Un utilisateur';
   const targetUsername = targetUserResult.rows[0]?.username || 'Un utilisateur';
 
   const isSelf = actorUserId === targetUserId;
@@ -510,16 +550,6 @@ exports.removeLeagueMember = async ({ leagueId, actorUserId, targetUserId }) => 
       `,
       [leagueId, targetUserId]
     );
-
-    if (target.status === 'active') {
-      await createFantasyNotification({
-        userId: league.created_by,
-        leagueId: leagueId,
-        type: 'member_left',
-        title: 'Un membre a quitté la ligue',
-        message: `${targetUsername} a quitté la ligue ${league.name}.`,
-      });
-    }
 
     return {
       leagueId,
@@ -550,6 +580,48 @@ exports.removeLeagueMember = async ({ leagueId, actorUserId, targetUserId }) => 
     `,
     [leagueId, targetUserId]
   );
+
+  await createFantasyNotification({
+    userId: targetUserId,
+    leagueId: leagueId,
+    type: 'removed_from_league',
+    title: 'Retiré d’une ligue',
+    message: `Tu as été retiré de la ligue ${league.name} par un administrateur.`,
+  });
+
+  if (target.status === 'active') {
+    const membersToNotifyResult = await pool.query(
+      `
+      SELECT user_id
+      FROM fantasy_league_members
+      WHERE league_id = $1
+        AND status = 'active'
+        AND user_id <> $2
+      `,
+      [leagueId, actorUserId]
+    );
+
+    for (const row of membersToNotifyResult.rows) {
+      await createFantasyNotification({
+        userId: row.user_id,
+        leagueId: leagueId,
+        type: 'member_removed',
+        title: 'Un membre a été retiré',
+        message: `${targetUsername} a été retiré de la ligue ${league.name} par un administrateur.`,
+      });
+    }
+  }
+
+  return {
+    leagueId,
+    actorUserId,
+    targetUserId,
+    removed: true,
+    previousStatus: target.status,
+    mode: 'admin_remove_member',
+  };
+};
+
 
   await createFantasyNotification({
     userId: targetUserId,
