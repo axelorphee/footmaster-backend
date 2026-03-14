@@ -298,6 +298,17 @@ exports.leaveLeague = async ({ leagueId, userId }) => {
 
   const username = userResult.rows[0]?.username || 'Un utilisateur';
 
+  const membersToNotifyResult = await pool.query(
+    `
+    SELECT user_id
+    FROM fantasy_league_members
+    WHERE league_id = $1
+      AND status = 'active'
+      AND user_id <> $2
+    `,
+    [leagueId, userId]
+  );
+
   await pool.query(
     `
     DELETE FROM fantasy_league_members
@@ -307,16 +318,6 @@ exports.leaveLeague = async ({ leagueId, userId }) => {
   );
 
   if (member.status === 'active') {
-    const membersToNotifyResult = await pool.query(
-      `
-      SELECT user_id
-      FROM fantasy_league_members
-      WHERE league_id = $1
-        AND status = 'active'
-      `,
-      [leagueId]
-    );
-
     for (const row of membersToNotifyResult.rows) {
       await createFantasyNotification({
         userId: row.user_id,
@@ -335,6 +336,7 @@ exports.leaveLeague = async ({ leagueId, userId }) => {
     removed: true,
   };
 };
+
 
 exports.getMyLeagues = async (userId) => {
   const result = await pool.query(
@@ -506,7 +508,7 @@ exports.removeLeagueMember = async ({ leagueId, actorUserId, targetUserId }) => 
 
   const leagueResult = await pool.query(
     `
-    SELECT id, name, created_by
+    SELECT id, name
     FROM fantasy_leagues
     WHERE id = $1
     `,
@@ -533,35 +535,15 @@ exports.removeLeagueMember = async ({ leagueId, actorUserId, targetUserId }) => 
   const targetUsername = targetUserResult.rows[0]?.username || 'Un utilisateur';
 
   const isSelf = actorUserId === targetUserId;
-  const isActorAdmin = actor.role === 'admin';
   const isTargetAdmin = target.role === 'admin';
 
   if (isSelf) {
-    if (actor.role === 'admin') {
-      const error = new Error('League admin cannot remove themselves');
-      error.statusCode = 400;
-      throw error;
-    }
-
-    await pool.query(
-      `
-      DELETE FROM fantasy_league_members
-      WHERE league_id = $1 AND user_id = $2
-      `,
-      [leagueId, targetUserId]
-    );
-
-    return {
-      leagueId,
-      actorUserId,
-      targetUserId,
-      removed: true,
-      previousStatus: target.status,
-      mode: target.status === 'pending' ? 'cancel_pending' : 'self_remove',
-    };
+    const error = new Error('Use leaveLeague for self leave/cancel');
+    error.statusCode = 400;
+    throw error;
   }
 
-  if (!isActorAdmin) {
+  if (actor.role !== 'admin' || actor.status !== 'active') {
     const error = new Error('Only league admin can remove another member');
     error.statusCode = 403;
     throw error;
@@ -572,6 +554,18 @@ exports.removeLeagueMember = async ({ leagueId, actorUserId, targetUserId }) => 
     error.statusCode = 400;
     throw error;
   }
+
+  const otherMembersToNotifyResult = await pool.query(
+    `
+    SELECT user_id
+    FROM fantasy_league_members
+    WHERE league_id = $1
+      AND status = 'active'
+      AND user_id <> $2
+      AND user_id <> $3
+    `,
+    [leagueId, actorUserId, targetUserId]
+  );
 
   await pool.query(
     `
@@ -590,18 +584,7 @@ exports.removeLeagueMember = async ({ leagueId, actorUserId, targetUserId }) => 
   });
 
   if (target.status === 'active') {
-    const membersToNotifyResult = await pool.query(
-      `
-      SELECT user_id
-      FROM fantasy_league_members
-      WHERE league_id = $1
-        AND status = 'active'
-        AND user_id <> $2
-      `,
-      [leagueId, actorUserId]
-    );
-
-    for (const row of membersToNotifyResult.rows) {
+    for (const row of otherMembersToNotifyResult.rows) {
       await createFantasyNotification({
         userId: row.user_id,
         leagueId: leagueId,
@@ -623,6 +606,7 @@ exports.removeLeagueMember = async ({ leagueId, actorUserId, targetUserId }) => 
 };
 
 
+
   await createFantasyNotification({
     userId: targetUserId,
     leagueId: leagueId,
@@ -639,7 +623,6 @@ exports.removeLeagueMember = async ({ leagueId, actorUserId, targetUserId }) => 
     previousStatus: target.status,
     mode: 'admin_remove_member',
   };
-};
 
 
 exports.approveLeagueRequest = async ({ leagueId, adminUserId, targetUserId }) => {
