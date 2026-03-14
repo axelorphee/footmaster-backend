@@ -95,6 +95,13 @@ router.post(
 );
 
 router.post(
+  '/leagues/join-by-code',
+  authMiddleware,
+  requireVerified,
+  fantasyController.joinLeagueByCode
+);
+
+router.post(
   '/leagues/:leagueId/requests/:userId/approve',
   authMiddleware,
   requireVerified,

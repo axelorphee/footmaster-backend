@@ -50,6 +50,26 @@ exports.joinLeague = async (req, res, next) => {
   }
 };
 
+exports.joinLeagueByCode = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { inviteCode } = req.body;
+
+    const result = await fantasyService.joinLeagueByCode({
+      userId,
+      inviteCode,
+    });
+
+    res.json({
+      success: true,
+      data: result,
+      message: 'League joined successfully by invite code',
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
 exports.getMyLeagues = async (req, res, next) => {
   try {
     const userId = req.user.id;

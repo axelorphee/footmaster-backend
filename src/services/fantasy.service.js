@@ -185,6 +185,40 @@ exports.joinLeague = async ({ leagueId, userId, inviteCode }) => {
   };
 };
 
+exports.joinLeagueByCode = async ({ userId, inviteCode }) => {
+  const cleanInviteCode = inviteCode?.trim();
+
+  if (!cleanInviteCode) {
+    const error = new Error('inviteCode is required');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const leagueResult = await pool.query(
+    `
+    SELECT id, name, description, tenant_id, type, invite_code, created_by, created_at
+    FROM fantasy_leagues
+    WHERE invite_code = $1
+    LIMIT 1
+    `,
+    [cleanInviteCode]
+  );
+
+  if (leagueResult.rows.length === 0) {
+    const error = new Error('Invalid invite code');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const league = leagueResult.rows[0];
+
+  return await exports.joinLeague({
+    leagueId: league.id,
+    userId,
+    inviteCode: cleanInviteCode,
+  });
+};
+
 exports.getMyLeagues = async (userId) => {
   const result = await pool.query(
     `
