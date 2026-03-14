@@ -446,3 +446,39 @@ exports.runMyGwPointsPipeline = async (req, res, next) => {
     next(err);
   }
 };
+
+exports.getMyFantasyNotifications = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+
+    const result = await fantasyService.getMyFantasyNotifications(userId);
+
+    res.json({
+      success: true,
+      data: result,
+      message: 'Fantasy notifications fetched successfully',
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+exports.markFantasyNotificationRead = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { notificationId } = req.params;
+
+    const result = await fantasyService.markFantasyNotificationRead({
+      notificationId,
+      userId,
+    });
+
+    res.json({
+      success: true,
+      data: result,
+      message: 'Fantasy notification marked as read',
+    });
+  } catch (err) {
+    next(err);
+  }
+};

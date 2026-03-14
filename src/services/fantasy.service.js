@@ -164,10 +164,14 @@ exports.joinLeague = async ({ leagueId, userId, inviteCode }) => {
   } else {
     const cleanInviteCode = inviteCode?.trim();
 
-    if (cleanInviteCode && cleanInviteCode === league.invite_code) {
-      status = 'active';
-      joinedAt = new Date();
+    if (!cleanInviteCode || cleanInviteCode !== league.invite_code) {
+      const error = new Error('Invalid invite code');
+      error.statusCode = 400;
+      throw error;
     }
+
+    status = 'pending';
+    joinedAt = null;
   }
 
   const result = await pool.query(
@@ -179,11 +183,34 @@ exports.joinLeague = async ({ leagueId, userId, inviteCode }) => {
     [leagueId, userId, role, status, joinedAt]
   );
 
+  if (league.type === 'private' && status === 'pending') {
+    const requesterResult = await pool.query(
+      `
+      SELECT username
+      FROM users
+      WHERE id = $1
+      `,
+      [userId]
+    );
+
+    const requesterUsername =
+      requesterResult.rows[0]?.username || 'Un utilisateur';
+
+    await createFantasyNotification({
+      userId: league.created_by,
+      leagueId: league.id,
+      type: 'join_request',
+      title: 'Nouvelle demande à rejoindre',
+      message: `${requesterUsername} a demandé à rejoindre la ligue ${league.name}.`,
+    });
+  }
+
   return {
     league,
     membership: result.rows[0],
   };
 };
+
 
 exports.joinLeagueByCode = async ({ userId, inviteCode }) => {
   const cleanInviteCode = inviteCode?.trim();
@@ -427,6 +454,44 @@ exports.removeLeagueMember = async ({ leagueId, actorUserId, targetUserId }) => 
 
   const target = targetResult.rows[0];
 
+  const leagueResult = await pool.query(
+    `
+    SELECT id, name, created_by
+    FROM fantasy_leagues
+    WHERE id = $1
+    `,
+    [leagueId]
+  );
+
+  if (leagueResult.rows.length === 0) {
+    const error = new Error('League not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const league = leagueResult.rows[0];
+
+  const actorUserResult = await pool.query(
+    `
+    SELECT username
+    FROM users
+    WHERE id = $1
+    `,
+    [actorUserId]
+  );
+
+  const targetUserResult = await pool.query(
+    `
+    SELECT username
+    FROM users
+    WHERE id = $1
+    `,
+    [targetUserId]
+  );
+
+  const actorUsername = actorUserResult.rows[0]?.username || 'Un utilisateur';
+  const targetUsername = targetUserResult.rows[0]?.username || 'Un utilisateur';
+
   const isSelf = actorUserId === targetUserId;
   const isActorAdmin = actor.role === 'admin';
   const isTargetAdmin = target.role === 'admin';
@@ -445,6 +510,16 @@ exports.removeLeagueMember = async ({ leagueId, actorUserId, targetUserId }) => 
       `,
       [leagueId, targetUserId]
     );
+
+    if (target.status === 'active') {
+      await createFantasyNotification({
+        userId: league.created_by,
+        leagueId: leagueId,
+        type: 'member_left',
+        title: 'Un membre a quitté la ligue',
+        message: `${targetUsername} a quitté la ligue ${league.name}.`,
+      });
+    }
 
     return {
       leagueId,
@@ -476,6 +551,14 @@ exports.removeLeagueMember = async ({ leagueId, actorUserId, targetUserId }) => 
     [leagueId, targetUserId]
   );
 
+  await createFantasyNotification({
+    userId: targetUserId,
+    leagueId: leagueId,
+    type: 'removed_from_league',
+    title: 'Retiré d’une ligue',
+    message: `Tu as été retiré de la ligue ${league.name} par un administrateur.`,
+  });
+
   return {
     leagueId,
     actorUserId,
@@ -485,6 +568,7 @@ exports.removeLeagueMember = async ({ leagueId, actorUserId, targetUserId }) => 
     mode: 'admin_remove_member',
   };
 };
+
 
 exports.approveLeagueRequest = async ({ leagueId, adminUserId, targetUserId }) => {
   const adminCheck = await pool.query(
@@ -525,6 +609,17 @@ exports.approveLeagueRequest = async ({ leagueId, adminUserId, targetUserId }) =
     throw error;
   }
 
+  const leagueResult = await pool.query(
+    `
+    SELECT id, name
+    FROM fantasy_leagues
+    WHERE id = $1
+    `,
+    [leagueId]
+  );
+
+  const league = leagueResult.rows[0];
+
   const result = await pool.query(
     `
     UPDATE fantasy_league_members
@@ -536,8 +631,17 @@ exports.approveLeagueRequest = async ({ leagueId, adminUserId, targetUserId }) =
     [leagueId, targetUserId]
   );
 
+  await createFantasyNotification({
+    userId: targetUserId,
+    leagueId: leagueId,
+    type: 'join_request_approved',
+    title: 'Demande acceptée',
+    message: `Ta demande pour rejoindre la ligue ${league.name} a été acceptée.`,
+  });
+
   return result.rows[0];
 };
+
 
 exports.rejectLeagueRequest = async ({ leagueId, adminUserId, targetUserId }) => {
   const adminCheck = await pool.query(
@@ -578,6 +682,17 @@ exports.rejectLeagueRequest = async ({ leagueId, adminUserId, targetUserId }) =>
     throw error;
   }
 
+  const leagueResult = await pool.query(
+    `
+    SELECT id, name
+    FROM fantasy_leagues
+    WHERE id = $1
+    `,
+    [leagueId]
+  );
+
+  const league = leagueResult.rows[0];
+
   await pool.query(
     `
     DELETE FROM fantasy_league_members
@@ -586,8 +701,17 @@ exports.rejectLeagueRequest = async ({ leagueId, adminUserId, targetUserId }) =>
     [leagueId, targetUserId]
   );
 
+  await createFantasyNotification({
+    userId: targetUserId,
+    leagueId: leagueId,
+    type: 'join_request_rejected',
+    title: 'Demande refusée',
+    message: `Ta demande pour rejoindre la ligue ${league.name} a été refusée.`,
+  });
+
   return { success: true };
 };
+
 
 exports.getTenantById = async (tenantId) => {
   const result = await pool.query(
@@ -1699,3 +1823,67 @@ exports.runMyGwPointsPipeline = async ({ userId, tenantId, gw }) => {
     sync: syncResult,
   };
 };
+
+async function createFantasyNotification({
+  userId,
+  leagueId = null,
+  type,
+  title,
+  message,
+}) {
+  const result = await pool.query(
+    `
+    INSERT INTO fantasy_notifications (user_id, league_id, type, title, message)
+    VALUES ($1, $2, $3, $4, $5)
+    RETURNING id, user_id, league_id, type, title, message, is_read, created_at
+    `,
+    [userId, leagueId, type, title, message]
+  );
+
+  return result.rows[0];
+};
+
+exports.getMyFantasyNotifications = async (userId) => {
+  const result = await pool.query(
+    `
+    SELECT
+      fn.id,
+      fn.user_id,
+      fn.league_id,
+      fn.type,
+      fn.title,
+      fn.message,
+      fn.is_read,
+      fn.created_at,
+      fl.name AS league_name
+    FROM fantasy_notifications fn
+    LEFT JOIN fantasy_leagues fl ON fl.id = fn.league_id
+    WHERE fn.user_id = $1
+    ORDER BY fn.created_at DESC
+    `,
+    [userId]
+  );
+
+  return result.rows;
+};
+
+exports.markFantasyNotificationRead = async ({ notificationId, userId }) => {
+  const result = await pool.query(
+    `
+    UPDATE fantasy_notifications
+    SET is_read = true
+    WHERE id = $1 AND user_id = $2
+    RETURNING id, user_id, league_id, type, title, message, is_read, created_at
+    `,
+    [notificationId, userId]
+  );
+
+  if (result.rows.length === 0) {
+    const error = new Error('Notification not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  return result.rows[0];
+};
+

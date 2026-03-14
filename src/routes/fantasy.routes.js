@@ -129,6 +129,21 @@ router.post(
   fantasyController.rejectLeagueRequest
 );
 
+router.get(
+  '/notifications/me',
+  authMiddleware,
+  requireVerified,
+  fantasyController.getMyFantasyNotifications
+);
+
+router.post(
+  '/notifications/:notificationId/read',
+  authMiddleware,
+  requireVerified,
+  fantasyController.markFantasyNotificationRead
+);
+
+
 
 
 module.exports = router;
