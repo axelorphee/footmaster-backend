@@ -2127,115 +2127,76 @@ async function seedFantasyPlayers({
 
   if (existingResult.rows.length > 0) return;
 
-  const teams = await competitionService.getTeamsByLeagueAndSeason(leagueId, season);
-
   const apiById = new Map();
+  let page = 1;
 
-  for (const teamRow of teams) {
-    const team = teamRow.team || teamRow;
-    const teamId = team?.id;
-    const teamName = team?.name || '';
+  while (true) {
+    const resp = await axios.get('https://api-football-v1.p.rapidapi.com/v3/players', {
+      headers: {
+        'X-RapidAPI-Key': process.env.RAPIDAPI_KEY,
+        'X-RapidAPI-Host': process.env.RAPIDAPI_HOST,
+      },
+      params: {
+        league: leagueId,
+        season,
+        page,
+      },
+    });
 
-    if (!teamId) continue;
+    const items = resp.data.response || [];
 
-    let squad = [];
-    try {
-      const squadData = await teamService.getSquadAndCoach(teamId);
-      squad = squadData.players || [];
-    } catch (_) {
-      squad = [];
-    }
+    for (const row of items) {
+      const player = row.player || {};
+      const statistics = row.statistics || [];
 
-    let page = 1;
-    const statsByPid = new Map();
+      const playerId = player.id;
+      if (!playerId) continue;
 
-    while (true) {
-      const resp = await axios.get('https://api-football-v1.p.rapidapi.com/v3/players', {
-        headers: {
-          'X-RapidAPI-Key': process.env.RAPIDAPI_KEY,
-          'X-RapidAPI-Host': process.env.RAPIDAPI_HOST,
-        },
-        params: {
-          team: teamId,
-          season,
-          page,
-        },
-      });
+      let rawPos = null;
+      let teamId = null;
+      let teamName = '';
+      let minutes = 0;
+      let goals = 0;
+      let assists = 0;
 
-      const items = resp.data.response || [];
+      for (const stat of statistics) {
+        const games = stat.games || {};
+        const goalsMap = stat.goals || {};
+        const team = stat.team || {};
 
-      for (const row of items) {
-        const p = row.player || {};
-        const pid = p.id;
-        if (!pid) continue;
+        rawPos = rawPos || games.position || null;
+        teamId = teamId || team.id || null;
+        teamName = teamName || team.name || '';
 
-        let apiPos = null;
-        let minutes = 0;
-        let goals = 0;
-        let assists = 0;
-
-        const st = row.statistics || [];
-        for (const one of st) {
-          const games = one.games || {};
-          const goalsMap = one.goals || {};
-          minutes += parseInt(games.minutes || 0, 10) || 0;
-          goals += parseInt(goalsMap.total || 0, 10) || 0;
-          assists += parseInt(goalsMap.assists || 0, 10) || 0;
-          apiPos = apiPos || games.position || null;
-        }
-
-        statsByPid.set(pid, {
-          minutes,
-          goals,
-          assists,
-          rawPos: apiPos,
-        });
+        minutes += parseInt(games.minutes || 0, 10) || 0;
+        goals += parseInt(goalsMap.total || 0, 10) || 0;
+        assists += parseInt(goalsMap.assists || 0, 10) || 0;
       }
 
-      const paging = resp.data.paging || {};
-      const cur = parseInt(paging.current || 1, 10);
-      const tot = parseInt(paging.total || 1, 10);
-      if (cur >= tot) break;
-      page++;
-    }
-
-    for (const p of squad) {
-      const pid = p.id || p.player?.id;
-      if (!pid) continue;
-
-      const name = (p.name || p.player?.name || '').toString();
-      const photo = (p.photo || p.player?.photo || '').toString();
-      const rawFromSquad = (p.position || p.player?.position || '').toString();
-
-      const st = statsByPid.get(pid) || {
-        minutes: 0,
-        goals: 0,
-        assists: 0,
-        rawPos: null,
-      };
-
-      const normPos = normalizeFantasyPosition(st.rawPos || rawFromSquad);
+      const normPos = normalizeFantasyPosition(rawPos);
       if (!normPos) continue;
 
-      const price = computeFantasyPrice(
-        normPos,
-        st.minutes || 0,
-        st.goals || 0,
-        st.assists || 0
-      );
+      const price = computeFantasyPrice(normPos, minutes, goals, assists);
 
-      apiById.set(pid, {
+      apiById.set(playerId, {
         tenantId,
-        playerId: pid,
+        playerId,
         teamId,
         teamName,
-        name,
+        name: (player.name || '').toString(),
         position: normPos,
         price,
         status: 'A',
-        photoUrl: photo || null,
+        photoUrl: (player.photo || '').toString() || null,
       });
     }
+
+    const paging = resp.data.paging || {};
+    const cur = parseInt(paging.current || 1, 10);
+    const tot = parseInt(paging.total || 1, 10);
+
+    if (cur >= tot) break;
+    page++;
   }
 
   for (const row of apiById.values()) {
