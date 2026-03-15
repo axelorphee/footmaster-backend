@@ -2110,7 +2110,7 @@ async function seedFantasyGameweeks({
   }
 }
 
-async function seedFantasyPlayers({
+async function refreshFantasyPlayerPrices({
   tenantId,
   leagueId,
   season,
@@ -2242,6 +2242,161 @@ async function seedFantasyPlayers({
   }
 }
 
+exports.refreshFantasyTenantPrices = async ({
+  tenantId,
+  leagueId,
+  season,
+  name,
+  logo,
+  country,
+}) => {
+  if (!tenantId || !leagueId || !season || !name) {
+    const error = new Error('tenantId, leagueId, season and name are required');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  await ensureFantasyTenantRow({
+    tenantId,
+    leagueId,
+    season,
+    name,
+    logo,
+    country,
+  });
+
+  await ensureFantasyRulesRow(tenantId);
+  await refreshFantasyPlayerPrices({ tenantId, leagueId, season });
+
+  await pool.query(
+    `
+    UPDATE fantasy_tenants
+    SET updated_at = CURRENT_TIMESTAMP
+    WHERE tenant_id = $1
+    `,
+    [tenantId]
+  );
+
+  return await exports.getTenantById(tenantId);
+};
+
+async function seedFantasyPlayersLight({
+  tenantId,
+  leagueId,
+  season,
+}) {
+  const existingResult = await pool.query(
+    `
+    SELECT id
+    FROM fantasy_players
+    WHERE tenant_id = $1
+    LIMIT 1
+    `,
+    [tenantId]
+  );
+
+  if (existingResult.rows.length > 0) return;
+
+  const teamsResponse = await competitionService.getTeamsByLeagueAndSeason(leagueId, season);
+  const teams = Array.isArray(teamsResponse?.response)
+    ? teamsResponse.response
+    : Array.isArray(teamsResponse)
+        ? teamsResponse
+        : [];
+
+  const playersMap = new Map();
+
+  for (const teamRow of teams) {
+    const team = teamRow.team || teamRow;
+    const teamId = team?.id;
+    const teamName = team?.name || '';
+
+    if (!teamId) continue;
+
+    let squad = [];
+
+    try {
+      const squadData = await teamService.getSquadAndCoach(teamId);
+      squad = squadData.players || [];
+    } catch (_) {
+      squad = [];
+    }
+
+    for (const p of squad) {
+      const pid = p.id || p.player?.id;
+      if (!pid) continue;
+
+      const name = (p.name || p.player?.name || '').toString();
+      const photo = (p.photo || p.player?.photo || '').toString();
+      const rawPos = (p.position || p.player?.position || '').toString();
+
+      const normPos = normalizeFantasyPosition(rawPos);
+      if (!normPos) continue;
+
+      const basePrice = {
+        GK: 4.5,
+        DEF: 4.5,
+        MID: 6.0,
+        FWD: 7.0,
+      }[normPos] || 6.0;
+
+      playersMap.set(pid, {
+        tenantId,
+        playerId: pid,
+        teamId,
+        teamName,
+        name,
+        position: normPos,
+        price: basePrice,
+        status: 'A',
+        photoUrl: photo || null,
+      });
+    }
+  }
+
+  for (const row of playersMap.values()) {
+    await pool.query(
+      `
+      INSERT INTO fantasy_players (
+        tenant_id,
+        player_id,
+        team_id,
+        team_name,
+        name,
+        position,
+        price,
+        status,
+        photo_url,
+        created_at,
+        updated_at
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      ON CONFLICT (tenant_id, player_id)
+      DO UPDATE SET
+        team_id = EXCLUDED.team_id,
+        team_name = EXCLUDED.team_name,
+        name = EXCLUDED.name,
+        position = EXCLUDED.position,
+        price = EXCLUDED.price,
+        status = EXCLUDED.status,
+        photo_url = EXCLUDED.photo_url,
+        updated_at = CURRENT_TIMESTAMP
+      `,
+      [
+        row.tenantId,
+        row.playerId,
+        row.teamId,
+        row.teamName,
+        row.name,
+        row.position,
+        row.price,
+        row.status,
+        row.photoUrl,
+      ]
+    );
+  }
+}
+
 exports.ensureFantasyTenantSeeded = async ({
   tenantId,
   leagueId,
@@ -2267,7 +2422,7 @@ exports.ensureFantasyTenantSeeded = async ({
 
   await ensureFantasyRulesRow(tenantId);
   await seedFantasyGameweeks({ tenantId, leagueId, season });
-  await seedFantasyPlayers({ tenantId, leagueId, season });
+  await seedFantasyPlayersLight({ tenantId, leagueId, season });
 
   await pool.query(
     `

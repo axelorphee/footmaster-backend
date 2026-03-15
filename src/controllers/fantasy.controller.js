@@ -512,3 +512,33 @@ exports.ensureFantasyTenantSeeded = async (req, res, next) => {
     next(err);
   }
 };
+
+exports.refreshFantasyTenantPrices = async (req, res, next) => {
+  try {
+    const {
+      tenantId,
+      leagueId,
+      season,
+      name,
+      logo,
+      country,
+    } = req.body;
+
+    const result = await fantasyService.refreshFantasyTenantPrices({
+      tenantId,
+      leagueId,
+      season,
+      name,
+      logo,
+      country,
+    });
+
+    res.json({
+      success: true,
+      data: result,
+      message: 'Fantasy tenant prices refreshed successfully',
+    });
+  } catch (err) {
+    next(err);
+  }
+};

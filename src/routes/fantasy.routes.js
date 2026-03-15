@@ -150,6 +150,12 @@ router.post(
   fantasyController.ensureFantasyTenantSeeded
 );
 
+router.post(
+  '/tenants/refresh-prices',
+  authMiddleware,
+  requireVerified,
+  fantasyController.refreshFantasyTenantPrices
+);
 
 
 module.exports = router;
