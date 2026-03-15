@@ -3,7 +3,6 @@ const pool = require('../config/database');
 const competitionService = require('./competition.service');
 const teamService = require('./team.service');
 const axios = require('axios');
-const axios = require('axios');
 
 const rapidApi = axios.create({
   baseURL: 'https://api-football-v1.p.rapidapi.com/v3',
