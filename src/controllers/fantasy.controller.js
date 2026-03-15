@@ -482,3 +482,33 @@ exports.markFantasyNotificationRead = async (req, res, next) => {
     next(err);
   }
 };
+
+exports.ensureFantasyTenantSeeded = async (req, res, next) => {
+  try {
+    const {
+      tenantId,
+      leagueId,
+      season,
+      name,
+      logo,
+      country,
+    } = req.body;
+
+    const result = await fantasyService.ensureFantasyTenantSeeded({
+      tenantId,
+      leagueId,
+      season,
+      name,
+      logo,
+      country,
+    });
+
+    res.json({
+      success: true,
+      data: result,
+      message: 'Fantasy tenant ensured and seeded successfully',
+    });
+  } catch (err) {
+    next(err);
+  }
+};

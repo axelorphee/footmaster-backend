@@ -1,5 +1,8 @@
 const pool = require('../config/database');
 
+const competitionService = require('./competition.service');
+const teamService = require('./team.service');
+const axios = require('axios');
 const axios = require('axios');
 
 const rapidApi = axios.create({
@@ -1924,3 +1927,397 @@ exports.markFantasyNotificationRead = async ({ notificationId, userId }) => {
   return result.rows[0];
 };
 
+function normalizeFantasyPosition(raw) {
+  const s = (raw || '').toString().toLowerCase().trim();
+  if (!s) return null;
+  if (s.includes('goalkeeper') || s === 'gk' || s === 'g') return 'GK';
+  if (s.includes('defender') || s === 'def' || s === 'd') return 'DEF';
+  if (s.includes('midfielder') || s === 'mid' || s === 'mf' || s === 'm') return 'MID';
+  if (s.includes('attacker') || s.includes('forward') || s === 'fwd' || s === 'fw' || s === 'f') return 'FWD';
+  return null;
+}
+
+function computeFantasyPrice(pos, minutes, goals, assists) {
+  const minMax = {
+    GK: [4.0, 6.5],
+    DEF: [4.0, 7.5],
+    MID: [4.5, 12.5],
+    FWD: [4.5, 12.5],
+  }[pos] || [4.5, 12.5];
+
+  const base = {
+    GK: 4.5,
+    DEF: 4.5,
+    MID: 6.0,
+    FWD: 7.0,
+  }[pos] || 6.0;
+
+  let p = base;
+  p += goals * 0.35;
+  p += assists * 0.25;
+  p += (minutes / 900.0) * 0.30;
+
+  if (p < minMax[0]) p = minMax[0];
+  if (p > minMax[1]) p = minMax[1];
+
+  return Number(p.toFixed(1));
+}
+
+function weekOfYear(date) {
+  const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+  const weekday = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - weekday);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+}
+
+async function ensureFantasyTenantRow({
+  tenantId,
+  leagueId,
+  season,
+  name,
+  logo,
+  country,
+}) {
+  await pool.query(
+    `
+    INSERT INTO fantasy_tenants (
+      tenant_id,
+      league_id,
+      season,
+      name,
+      logo,
+      country,
+      seeded,
+      created_at,
+      updated_at
+    )
+    VALUES ($1, $2, $3, $4, $5, $6, false, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    ON CONFLICT (tenant_id)
+    DO UPDATE SET
+      league_id = EXCLUDED.league_id,
+      season = EXCLUDED.season,
+      name = EXCLUDED.name,
+      logo = EXCLUDED.logo,
+      country = EXCLUDED.country,
+      updated_at = CURRENT_TIMESTAMP
+    `,
+    [tenantId, leagueId, season, name, logo || null, country || null]
+  );
+}
+
+async function ensureFantasyRulesRow(tenantId) {
+  await pool.query(
+    `
+    INSERT INTO fantasy_rules (
+      tenant_id,
+      budget_cap,
+      max_players_per_club,
+      allowed_formations,
+      created_at,
+      updated_at
+    )
+    VALUES (
+      $1,
+      90.0,
+      3,
+      '["3-4-3","3-5-2","4-4-2","4-3-3","4-5-1","5-3-2","5-4-1"]'::jsonb,
+      CURRENT_TIMESTAMP,
+      CURRENT_TIMESTAMP
+    )
+    ON CONFLICT (tenant_id)
+    DO NOTHING
+    `,
+    [tenantId]
+  );
+}
+
+async function seedFantasyGameweeks({
+  tenantId,
+  leagueId,
+  season,
+}) {
+  const existingResult = await pool.query(
+    `
+    SELECT id
+    FROM fantasy_gameweeks
+    WHERE tenant_id = $1
+    LIMIT 1
+    `,
+    [tenantId]
+  );
+
+  if (existingResult.rows.length > 0) return;
+
+  const fixtures = await competitionService.getLeagueFixtures(leagueId, season);
+  const byGw = new Map();
+
+  for (const fx of fixtures) {
+    const roundStr = (fx.league?.round || '').toString();
+    const match = roundStr.match(/(\d+)/);
+    let gw;
+
+    if (match) {
+      gw = parseInt(match[1], 10);
+    } else {
+      const date = new Date(fx.fixture.date);
+      gw = weekOfYear(date);
+    }
+
+    if (!byGw.has(gw)) byGw.set(gw, []);
+    byGw.get(gw).push(fx);
+  }
+
+  const gws = Array.from(byGw.keys()).sort((a, b) => a - b);
+
+  for (const gw of gws) {
+    const fixturesForGw = byGw.get(gw) || [];
+
+    fixturesForGw.sort(
+      (a, b) => new Date(a.fixture.date) - new Date(b.fixture.date)
+    );
+
+    const firstKick = new Date(fixturesForGw[0].fixture.date);
+    const lastKick = new Date(fixturesForGw[fixturesForGw.length - 1].fixture.date);
+    const deadline = new Date(firstKick.getTime() - 90 * 60 * 1000);
+    const fixtureIds = fixturesForGw.map(f => f.fixture.id);
+
+    await pool.query(
+      `
+      INSERT INTO fantasy_gameweeks (
+        tenant_id,
+        gw,
+        fixture_ids,
+        status,
+        start_utc,
+        end_utc,
+        deadline_utc,
+        created_at,
+        updated_at
+      )
+      VALUES ($1, $2, $3::jsonb, 'upcoming', $4, $5, $6, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      ON CONFLICT (tenant_id, gw)
+      DO NOTHING
+      `,
+      [
+        tenantId,
+        gw,
+        JSON.stringify(fixtureIds),
+        firstKick.toISOString(),
+        lastKick.toISOString(),
+        deadline.toISOString(),
+      ]
+    );
+  }
+}
+
+async function seedFantasyPlayers({
+  tenantId,
+  leagueId,
+  season,
+}) {
+  const existingResult = await pool.query(
+    `
+    SELECT id
+    FROM fantasy_players
+    WHERE tenant_id = $1
+    LIMIT 1
+    `,
+    [tenantId]
+  );
+
+  if (existingResult.rows.length > 0) return;
+
+  const teams = await competitionService.getTeamsByLeagueAndSeason(leagueId, season);
+
+  const apiById = new Map();
+
+  for (const teamRow of teams) {
+    const team = teamRow.team || teamRow;
+    const teamId = team?.id;
+    const teamName = team?.name || '';
+
+    if (!teamId) continue;
+
+    let squad = [];
+    try {
+      const squadData = await teamService.getSquadAndCoach(teamId);
+      squad = squadData.players || [];
+    } catch (_) {
+      squad = [];
+    }
+
+    let page = 1;
+    const statsByPid = new Map();
+
+    while (true) {
+      const resp = await axios.get('https://api-football-v1.p.rapidapi.com/v3/players', {
+        headers: {
+          'X-RapidAPI-Key': process.env.RAPIDAPI_KEY,
+          'X-RapidAPI-Host': process.env.RAPIDAPI_HOST,
+        },
+        params: {
+          team: teamId,
+          season,
+          page,
+        },
+      });
+
+      const items = resp.data.response || [];
+
+      for (const row of items) {
+        const p = row.player || {};
+        const pid = p.id;
+        if (!pid) continue;
+
+        let apiPos = null;
+        let minutes = 0;
+        let goals = 0;
+        let assists = 0;
+
+        const st = row.statistics || [];
+        for (const one of st) {
+          const games = one.games || {};
+          const goalsMap = one.goals || {};
+          minutes += parseInt(games.minutes || 0, 10) || 0;
+          goals += parseInt(goalsMap.total || 0, 10) || 0;
+          assists += parseInt(goalsMap.assists || 0, 10) || 0;
+          apiPos = apiPos || games.position || null;
+        }
+
+        statsByPid.set(pid, {
+          minutes,
+          goals,
+          assists,
+          rawPos: apiPos,
+        });
+      }
+
+      const paging = resp.data.paging || {};
+      const cur = parseInt(paging.current || 1, 10);
+      const tot = parseInt(paging.total || 1, 10);
+      if (cur >= tot) break;
+      page++;
+    }
+
+    for (const p of squad) {
+      const pid = p.id || p.player?.id;
+      if (!pid) continue;
+
+      const name = (p.name || p.player?.name || '').toString();
+      const photo = (p.photo || p.player?.photo || '').toString();
+      const rawFromSquad = (p.position || p.player?.position || '').toString();
+
+      const st = statsByPid.get(pid) || {
+        minutes: 0,
+        goals: 0,
+        assists: 0,
+        rawPos: null,
+      };
+
+      const normPos = normalizeFantasyPosition(st.rawPos || rawFromSquad);
+      if (!normPos) continue;
+
+      const price = computeFantasyPrice(
+        normPos,
+        st.minutes || 0,
+        st.goals || 0,
+        st.assists || 0
+      );
+
+      apiById.set(pid, {
+        tenantId,
+        playerId: pid,
+        teamId,
+        teamName,
+        name,
+        position: normPos,
+        price,
+        status: 'A',
+        photoUrl: photo || null,
+      });
+    }
+  }
+
+  for (const row of apiById.values()) {
+    await pool.query(
+      `
+      INSERT INTO fantasy_players (
+        tenant_id,
+        player_id,
+        team_id,
+        team_name,
+        name,
+        position,
+        price,
+        status,
+        photo_url,
+        created_at,
+        updated_at
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      ON CONFLICT (tenant_id, player_id)
+      DO UPDATE SET
+        team_id = EXCLUDED.team_id,
+        team_name = EXCLUDED.team_name,
+        name = EXCLUDED.name,
+        position = EXCLUDED.position,
+        price = EXCLUDED.price,
+        status = EXCLUDED.status,
+        photo_url = EXCLUDED.photo_url,
+        updated_at = CURRENT_TIMESTAMP
+      `,
+      [
+        row.tenantId,
+        row.playerId,
+        row.teamId,
+        row.teamName,
+        row.name,
+        row.position,
+        row.price,
+        row.status,
+        row.photoUrl,
+      ]
+    );
+  }
+}
+
+exports.ensureFantasyTenantSeeded = async ({
+  tenantId,
+  leagueId,
+  season,
+  name,
+  logo,
+  country,
+}) => {
+  if (!tenantId || !leagueId || !season || !name) {
+    const error = new Error('tenantId, leagueId, season and name are required');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  await ensureFantasyTenantRow({
+    tenantId,
+    leagueId,
+    season,
+    name,
+    logo,
+    country,
+  });
+
+  await ensureFantasyRulesRow(tenantId);
+  await seedFantasyGameweeks({ tenantId, leagueId, season });
+  await seedFantasyPlayers({ tenantId, leagueId, season });
+
+  await pool.query(
+    `
+    UPDATE fantasy_tenants
+    SET seeded = true,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE tenant_id = $1
+    `,
+    [tenantId]
+  );
+
+  return await exports.getTenantById(tenantId);
+};

@@ -143,6 +143,12 @@ router.post(
   fantasyController.markFantasyNotificationRead
 );
 
+router.post(
+  '/tenants/ensure-seeded',
+  authMiddleware,
+  requireVerified,
+  fantasyController.ensureFantasyTenantSeeded
+);
 
 
 
