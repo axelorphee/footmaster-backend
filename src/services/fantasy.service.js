@@ -2115,22 +2115,14 @@ async function refreshFantasyPlayerPrices({
   leagueId,
   season,
 }) {
-  const existingResult = await pool.query(
-    `
-    SELECT id
-    FROM fantasy_players
-    WHERE tenant_id = $1
-    LIMIT 1
-    `,
-    [tenantId]
-  );
-
-  if (existingResult.rows.length > 0) return;
+  console.log('refreshFantasyPlayerPrices started for', tenantId, leagueId, season);
 
   const apiById = new Map();
   let page = 1;
 
   while (true) {
+    console.log('Fetching players page', page);
+
     const resp = await axios.get('https://api-football-v1.p.rapidapi.com/v3/players', {
       headers: {
         'X-RapidAPI-Key': process.env.RAPIDAPI_KEY,
