@@ -1,7 +1,6 @@
 const axios = require('axios');
 
-const USE_MOCK = false;
-const CACHE_TTL = 1000 * 60 * 5; // 5 minutes
+const CACHE_TTL = 1000 * 60 * 5;
 
 const cache = new Map();
 
@@ -13,115 +12,117 @@ const rapidApi = axios.create({
   },
 });
 
+function groupFixturesByLeague(fixtures) {
+  const grouped = {};
+
+  for (const match of fixtures) {
+    const league = match.league;
+    const leagueId = league.id;
+
+    if (!grouped[leagueId]) {
+      grouped[leagueId] = {
+        league: {
+          id: league.id,
+          name: league.name,
+          country: league.country,
+          logo: league.logo,
+          season: league.season,
+          type: league.type,
+          standings: league.standings,
+          flag: league.flag,
+        },
+        matches: [],
+      };
+    }
+
+    grouped[leagueId].matches.push(match);
+  }
+
+  return Object.values(grouped);
+}
+
+function handleApiError(error) {
+  if (error.response) {
+    if (error.response.status === 429) {
+      const err = new Error('API quota exceeded');
+      err.statusCode = 503;
+      throw err;
+    }
+
+    const err = new Error(`API Error: ${error.response.status}`);
+    err.statusCode = error.response.status;
+    throw err;
+  }
+
+  const err = new Error('External API unavailable');
+  err.statusCode = 500;
+  throw err;
+}
+
 exports.getMatchesByDate = async (date) => {
   const cacheKey = `matches_${date}`;
   const now = Date.now();
 
-  // ✅ Cache check
   if (cache.has(cacheKey)) {
     const cachedEntry = cache.get(cacheKey);
 
     if (now - cachedEntry.timestamp < CACHE_TTL) {
-      console.log('Returning from cache');
+      console.log('Returning matches by date from cache');
       return cachedEntry.data;
     }
 
     cache.delete(cacheKey);
   }
 
-  let result;
+  try {
+    const response = await rapidApi.get('/fixtures', {
+      params: { date },
+    });
 
-  if (USE_MOCK) {
-    result = [
-      {
-        league: {
-          id: 39,
-          name: 'Premier League',
-          country: 'England',
-          logo: null,
-          season: 2024,
-          type: 'League',
-          standings: true,
-        },
-        matches: [
-          {
-            fixture: {
-              id: 12345,
-              date: new Date().toISOString(),
-              status: { short: 'NS' },
-            },
-            league: {
-              id: 39,
-              season: 2024,
-            },
-            teams: {
-              home: { id: 1, name: 'Arsenal', logo: null },
-              away: { id: 2, name: 'Chelsea', logo: null },
-            },
-            goals: {
-              home: null,
-              away: null,
-            },
-          },
-        ],
-      },
-    ];
-  } else {
-    try {
-      const response = await rapidApi.get('/fixtures', {
-        params: { date },
-      });
+    const fixtures = response.data.response || [];
+    const result = groupFixturesByLeague(fixtures);
 
-      const fixtures = response.data.response;
-      const grouped = {};
+    cache.set(cacheKey, {
+      timestamp: now,
+      data: result,
+    });
 
-      for (const match of fixtures) {
-        const league = match.league;
-        const leagueId = league.id;
+    return result;
+  } catch (error) {
+    handleApiError(error);
+  }
+};
 
-        if (!grouped[leagueId]) {
-          grouped[leagueId] = {
-            league: {
-              id: league.id,
-              name: league.name,
-              country: league.country,
-              logo: league.logo,
-              season: league.season,          // ✅ IMPORTANT
-              type: league.type,
-              standings: league.standings,
-            },
-            matches: [],
-          };
-        }
+exports.getLiveMatches = async () => {
+  const cacheKey = 'live_matches';
+  const now = Date.now();
 
-        grouped[leagueId].matches.push(match);
-      }
+  if (cache.has(cacheKey)) {
+    const cachedEntry = cache.get(cacheKey);
 
-      result = Object.values(grouped);
-
-    } catch (error) {
-      if (error.response) {
-        if (error.response.status === 429) {
-          const err = new Error('API quota exceeded');
-          err.statusCode = 503;
-          throw err;
-        }
-
-        const err = new Error(`API Error: ${error.response.status}`);
-        err.statusCode = error.response.status;
-        throw err;
-      }
-
-      const err = new Error('External API unavailable');
-      err.statusCode = 500;
-      throw err;
+    if (now - cachedEntry.timestamp < CACHE_TTL) {
+      console.log('Returning live matches from cache');
+      return cachedEntry.data;
     }
+
+    cache.delete(cacheKey);
   }
 
-  cache.set(cacheKey, {
-    timestamp: now,
-    data: result,
-  });
+  try {
+    const response = await rapidApi.get('/fixtures', {
+      params: { live: 'all' },
+    });
 
-  return result;
+    const fixtures = response.data.response || [];
+    const result = groupFixturesByLeague(fixtures);
+
+    cache.set(cacheKey, {
+      timestamp: now,
+      data: result,
+    });
+
+    return result;
+  } catch (error) {
+    handleApiError(error);
+  }
 };

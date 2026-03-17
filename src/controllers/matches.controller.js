@@ -25,3 +25,12 @@ exports.getMatchesByDate = async (req, res, next) => {
     next(error);
   }
 };
+
+exports.getLiveMatches = async (req, res, next) => {
+  try {
+    const result = await matchesService.getLiveMatches();
+    res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+};
