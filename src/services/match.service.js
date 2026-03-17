@@ -31,8 +31,16 @@ async function getHeadToHead(homeTeamId, awayTeamId, limit = 5) {
 
   return response.data.response || [];
 }
+
+async function getFixtureInjuries(fixtureId) {
+  const response = await rapidApi.get('/injuries', {
+    params: { fixture: fixtureId },
+  });
+
+  return response.data.response || [];
+}
+
 async function getPrematchData(fixtureId) {
-  // 1️⃣ Récupérer les détails du match
   const fixture = await getFixtureDetails(fixtureId);
 
   const homeTeamId = fixture.teams.home.id;
@@ -40,8 +48,7 @@ async function getPrematchData(fixtureId) {
 
   const matchDate = new Date(fixture.fixture.date);
 
-  // 2️⃣ Récupérer derniers matchs + H2H en parallèle
-  const [homeLastRaw, awayLastRaw, h2hRaw] = await Promise.all([
+  const [homeLastRaw, awayLastRaw, h2hRaw, injuriesRaw] = await Promise.all([
     rapidApi.get('/fixtures', {
       params: { team: homeTeamId, last: 10 },
     }),
@@ -51,26 +58,23 @@ async function getPrematchData(fixtureId) {
     rapidApi.get('/fixtures/headtohead', {
       params: { h2h: `${homeTeamId}-${awayTeamId}`, last: 10 },
     }),
+    rapidApi.get('/injuries', {
+      params: { fixture: fixtureId },
+    }),
   ]);
 
-  // 3️⃣ Extraire les données
   const homeLast = homeLastRaw.data.response || [];
   const awayLast = awayLastRaw.data.response || [];
   const headToHead = h2hRaw.data.response || [];
+  const injuries = injuriesRaw.data.response || [];
 
-  // 4️⃣ Filtrage intelligent
   function filterMatches(matches) {
     return matches
-      .filter(m => {
+      .filter((m) => {
         const date = new Date(m.fixture.date);
-        return (
-          m.fixture.id !== fixtureId &&
-          date < matchDate
-        );
+        return m.fixture.id !== fixtureId && date < matchDate;
       })
-      .sort((a, b) =>
-        new Date(b.fixture.date) - new Date(a.fixture.date)
-      )
+      .sort((a, b) => new Date(b.fixture.date) - new Date(a.fixture.date))
       .slice(0, 5);
   }
 
@@ -79,6 +83,7 @@ async function getPrematchData(fixtureId) {
     homeLast: filterMatches(homeLast),
     awayLast: filterMatches(awayLast),
     headToHead: filterMatches(headToHead),
+    injuries,
   };
 }
 
@@ -106,11 +111,10 @@ async function getMatchEventsAndStats(fixtureId) {
   };
 }
 
-
-
 module.exports = {
   getFixtureDetails,
   getHeadToHead,
+  getFixtureInjuries,
   getPrematchData,
   getLineups,
   getMatchEventsAndStats,
