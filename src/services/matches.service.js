@@ -1,6 +1,7 @@
 const axios = require('axios');
 
 const CACHE_TTL = 1000 * 60 * 5;
+const LIVE_CACHE_TTL = 1000 * 30;
 
 const cache = new Map();
 
@@ -100,7 +101,7 @@ exports.getLiveMatches = async () => {
   if (cache.has(cacheKey)) {
     const cachedEntry = cache.get(cacheKey);
 
-    if (now - cachedEntry.timestamp < CACHE_TTL) {
+    if (now - cachedEntry.timestamp < LIVE_CACHE_TTL) {
       console.log('Returning live matches from cache');
       return cachedEntry.data;
     }
