@@ -76,12 +76,14 @@ exports.getPlayers = async (req, res, next) => {
 
 exports.searchPlayers = async (req, res, next) => {
   try {
-    const { q, page } = req.query;
-    if (!q) {
+    const query = req.query.q || req.query.search;
+    const { page } = req.query;
+
+    if (!query) {
       return res.status(400).json({ error: 'Missing query' });
     }
 
-    const data = await playerService.searchPlayers(q, page || 1);
+    const data = await playerService.searchPlayers(query, page || 1);
     res.json(data);
   } catch (err) {
     next(err);
