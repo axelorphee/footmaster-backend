@@ -159,7 +159,7 @@ async function searchVariant(query) {
   const [leaguesResp, teamsResp, playersResp] = await Promise.all([
     rapidApi.get('/leagues', { params: { search: query } }),
     rapidApi.get('/teams', { params: { search: query } }),
-    rapidApi.get('/players', { params: { search: query } }),
+    rapidApi.get('/players/profiles', { params: { search: query, page: 1 } }),
   ]);
 
   const leagues = leaguesResp.data.response || [];
