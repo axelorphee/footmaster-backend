@@ -1757,10 +1757,84 @@ exports.getLeagueStandings = async ({ leagueId, userId }) => {
   };
 };
 
+exports.refreshFantasyGameweekStatuses = async (tenantId = null) => {
+  const values = [];
+  let whereClause = '';
+
+  if (tenantId) {
+    values.push(tenantId);
+    whereClause = `WHERE tenant_id = $1`;
+  }
+
+  const result = await pool.query(
+    `
+    SELECT id, tenant_id, gw, start_utc, end_utc, status
+    FROM fantasy_gameweeks
+    ${whereClause}
+    ORDER BY tenant_id ASC, gw ASC
+    `,
+    values
+  );
+
+  const now = new Date();
+  const updated = [];
+
+  for (const row of result.rows) {
+    const startUtc = row.start_utc ? new Date(row.start_utc) : null;
+    const endUtc = row.end_utc ? new Date(row.end_utc) : null;
+
+    let newStatus = 'upcoming';
+
+    if (
+      startUtc instanceof Date &&
+      !Number.isNaN(startUtc.getTime()) &&
+      endUtc instanceof Date &&
+      !Number.isNaN(endUtc.getTime())
+    ) {
+      if (now < startUtc) {
+        newStatus = 'upcoming';
+      } else if (now >= startUtc && now <= endUtc) {
+        newStatus = 'live';
+      } else if (now > endUtc) {
+        newStatus = 'finished';
+      }
+    }
+
+    if (row.status !== newStatus) {
+      await pool.query(
+        `
+        UPDATE fantasy_gameweeks
+        SET status = $1,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = $2
+        `,
+        [newStatus, row.id]
+      );
+
+      updated.push({
+        id: row.id,
+        tenant_id: row.tenant_id,
+        gw: row.gw,
+        old_status: row.status,
+        new_status: newStatus,
+      });
+    }
+  }
+
+  return {
+    success: true,
+    checked: result.rows.length,
+    updatedCount: updated.length,
+    updated,
+  };
+};
+
 exports.fetchAndUpsertFantasyPlayerGwPoints = async ({ tenantId, gw }) => {
+  await exports.refreshFantasyGameweekStatuses(tenantId);
+
   const gameweekResult = await pool.query(
     `
-    SELECT fixture_ids
+    SELECT fixture_ids, status, end_utc
     FROM fantasy_gameweeks
     WHERE tenant_id = $1 AND gw = $2
     `,
@@ -1773,9 +1847,27 @@ exports.fetchAndUpsertFantasyPlayerGwPoints = async ({ tenantId, gw }) => {
     throw error;
   }
 
-  const fixtureIds = Array.isArray(gameweekResult.rows[0].fixture_ids)
-    ? gameweekResult.rows[0].fixture_ids
+  const gameweek = gameweekResult.rows[0];
+
+  const fixtureIds = Array.isArray(gameweek.fixture_ids)
+    ? gameweek.fixture_ids
     : [];
+
+  const status = (gameweek.status || '').toString().toLowerCase().trim();
+  const endUtc = gameweek.end_utc ? new Date(gameweek.end_utc) : null;
+  const now = new Date();
+
+  const isFinishedByStatus =
+    status === 'finished' ||
+    status === 'completed' ||
+    status === 'closed';
+
+  const isFinishedByTime =
+    endUtc instanceof Date && !Number.isNaN(endUtc.getTime())
+      ? now > endUtc
+      : false;
+
+  const isGwFinished = isFinishedByStatus || isFinishedByTime;
 
   if (fixtureIds.length === 0) {
     return {
@@ -1783,7 +1875,33 @@ exports.fetchAndUpsertFantasyPlayerGwPoints = async ({ tenantId, gw }) => {
       gw,
       processed: 0,
       fixturesProcessed: 0,
+      cached: true,
+      gwFinished: isGwFinished,
     };
+  }
+
+  if (isGwFinished) {
+    const cachedResult = await pool.query(
+      `
+      SELECT COUNT(*)::int AS count
+      FROM fantasy_player_gw_points
+      WHERE tenant_id = $1 AND gw = $2
+      `,
+      [tenantId, gw]
+    );
+
+    const cachedCount = Number(cachedResult.rows[0]?.count ?? 0);
+
+    if (cachedCount > 0) {
+      return {
+        tenantId,
+        gw,
+        processed: cachedCount,
+        fixturesProcessed: 0,
+        cached: true,
+        gwFinished: true,
+      };
+    }
   }
 
   const statsByPlayerId = {};
@@ -1834,6 +1952,8 @@ exports.fetchAndUpsertFantasyPlayerGwPoints = async ({ tenantId, gw }) => {
     gw,
     processed: upsertResult.processed,
     fixturesProcessed: fixtureIds.length,
+    cached: false,
+    gwFinished: isGwFinished,
   };
 };
 
