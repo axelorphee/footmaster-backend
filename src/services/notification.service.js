@@ -111,3 +111,58 @@ exports.markAppNotificationRead = async ({ notificationId, userId }) => {
 
   return result.rows[0];
 };
+
+exports.getMatchOverrides = async (userId) => {
+  const result = await pool.query(
+    `
+    SELECT *
+    FROM notification_match_overrides
+    WHERE user_id = $1
+    `,
+    [userId]
+  );
+
+  return result.rows;
+};
+
+exports.upsertMatchOverride = async ({
+  userId,
+  fixtureId,
+}) => {
+  const result = await pool.query(
+    `
+    INSERT INTO notification_match_overrides (
+      user_id,
+      fixture_id,
+      is_enabled
+    )
+    VALUES ($1, $2, true)
+    ON CONFLICT (user_id, fixture_id)
+    DO UPDATE SET
+      is_enabled = true,
+      updated_at = CURRENT_TIMESTAMP
+    RETURNING *
+    `,
+    [userId, fixtureId]
+  );
+
+  return result.rows[0];
+};
+
+exports.disableMatchOverride = async ({
+  userId,
+  fixtureId,
+}) => {
+  await pool.query(
+    `
+    UPDATE notification_match_overrides
+    SET is_enabled = false,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE user_id = $1
+      AND fixture_id = $2
+    `,
+    [userId, fixtureId]
+  );
+
+  return { success: true };
+};

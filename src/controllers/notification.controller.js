@@ -85,3 +85,55 @@ exports.markAppNotificationRead = async (req, res, next) => {
     next(err);
   }
 };
+
+exports.getMatchOverrides = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+
+    const data = await service.getMatchOverrides(userId);
+
+    res.json({
+      success: true,
+      data,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+exports.enableMatchOverride = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { fixture_id } = req.body;
+
+    const data = await service.upsertMatchOverride({
+      userId,
+      fixtureId: fixture_id,
+    });
+
+    res.status(201).json({
+      success: true,
+      data,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+exports.disableMatchOverride = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { fixtureId } = req.params;
+
+    await service.disableMatchOverride({
+      userId,
+      fixtureId,
+    });
+
+    res.json({
+      success: true,
+    });
+  } catch (err) {
+    next(err);
+  }
+};

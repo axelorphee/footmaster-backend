@@ -22,4 +22,14 @@ router.patch(
   controller.markAppNotificationRead
 );
 
+router.get('/matches', authMiddleware, controller.getMatchOverrides);
+
+router.post('/matches', authMiddleware, controller.enableMatchOverride);
+
+router.delete(
+  '/matches/:fixtureId',
+  authMiddleware,
+  controller.disableMatchOverride
+);
+
 module.exports = router;
