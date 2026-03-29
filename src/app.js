@@ -6,7 +6,9 @@ const favoritesRoutes = require('./routes/favorites.routes');
 const errorMiddleware = require('./middlewares/error.middleware');
 const rateLimit = require('express-rate-limit');
 const accountRoutes = require('./routes/account.routes');
+const notificationsRoutes = require('./routes/notification.routes');
 const startCleanupJob = require('./jobs/cleanup.job');
+
 
 
 
@@ -48,6 +50,7 @@ app.use('/api/favorites', favoritesRoutes);
 app.use('/api/account', accountRoutes);
 app.use('/api/fantasy', require('./routes/fantasy.routes'));
 app.use('/api/fantasy-migration', require('./routes/fantasyMigration.routes'));
+app.use('/api/notifications/subscriptions', notificationsRoutes);
 
 
 

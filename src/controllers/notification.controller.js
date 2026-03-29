@@ -1,0 +1,53 @@
+const service = require('../services/notification.service');
+
+exports.getSubscriptions = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+
+    const data = await service.getSubscriptions(userId);
+
+    res.json({
+      success: true,
+      data,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+exports.enableSubscription = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { source_type, source_id } = req.body;
+
+    const data = await service.upsertSubscription({
+      userId,
+      sourceType: source_type,
+      sourceId: source_id,
+    });
+
+    res.status(201).json({
+      success: true,
+      data,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+exports.disableSubscription = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { type, id } = req.params;
+
+    await service.disableSubscription({
+      userId,
+      sourceType: type,
+      sourceId: id,
+    });
+
+    res.json({ success: true });
+  } catch (err) {
+    next(err);
+  }
+};
