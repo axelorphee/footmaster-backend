@@ -887,7 +887,7 @@ exports.getTenantPlayers = async (tenantId, filters = {}) => {
   return result.rows;
 };
 
-exports.getMySquadByGw = async ({ userId, tenantId, gw }) => {
+async function loadSquadWithPicksByGw({ userId, tenantId, gw }) {
   const squadResult = await pool.query(
     `
     SELECT
@@ -938,6 +938,93 @@ exports.getMySquadByGw = async ({ userId, tenantId, gw }) => {
     ...squad,
     picks: picksResult.rows,
   };
+}
+
+async function buildSuggestedSquadFromRecentGw({ userId, tenantId, gw }) {
+  const candidateGws = [gw - 1, gw - 2, gw - 3].filter((x) => x > 0);
+
+  for (const sourceGw of candidateGws) {
+    const previousSquad = await loadSquadWithPicksByGw({
+      userId,
+      tenantId,
+      gw: sourceGw,
+    });
+
+    if (previousSquad) {
+      return {
+        id: null,
+        user_id: userId,
+        tenant_id: tenantId,
+        gw,
+        formation: previousSquad.formation,
+        budget_cap: previousSquad.budget_cap,
+        max_players_per_club: previousSquad.max_players_per_club,
+        created_at: null,
+        updated_at: null,
+        is_suggested: true,
+        source_gw: sourceGw,
+        picks: previousSquad.picks.map((pick) => ({
+          id: null,
+          squad_id: null,
+          slot: pick.slot,
+          player_id: pick.player_id,
+          is_captain: pick.is_captain,
+          is_vice: pick.is_vice,
+          is_bench: pick.is_bench,
+          position_snapshot: pick.position_snapshot,
+          team_id_snapshot: pick.team_id_snapshot,
+          price_snapshot: pick.price_snapshot,
+          created_at: null,
+          updated_at: null,
+        })),
+      };
+    }
+  }
+
+  return null;
+}
+
+exports.getMySquadByGw = async ({ userId, tenantId, gw }) => {
+  const gameweekResult = await pool.query(
+    `
+    SELECT gw
+    FROM fantasy_gameweeks
+    WHERE tenant_id = $1 AND gw = $2
+    `,
+    [tenantId, gw]
+  );
+
+  if (gameweekResult.rows.length === 0) {
+    const error = new Error('Gameweek not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const existingSquad = await loadSquadWithPicksByGw({
+    userId,
+    tenantId,
+    gw,
+  });
+
+  if (existingSquad) {
+    return {
+      ...existingSquad,
+      is_suggested: false,
+      source_gw: null,
+    };
+  }
+
+  const suggestedSquad = await buildSuggestedSquadFromRecentGw({
+    userId,
+    tenantId,
+    gw,
+  });
+
+  if (suggestedSquad) {
+    return suggestedSquad;
+  }
+
+  return null;
 };
 
 exports.saveMySquadByGw = async ({ userId, tenantId, gw, formation, picks }) => {
