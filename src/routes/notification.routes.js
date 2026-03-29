@@ -14,4 +14,12 @@ router.delete(
   controller.disableSubscription
 );
 
+router.get('/feed', authMiddleware, controller.getAppNotifications);
+
+router.patch(
+  '/feed/:notificationId/read',
+  authMiddleware,
+  controller.markAppNotificationRead
+);
+
 module.exports = router;

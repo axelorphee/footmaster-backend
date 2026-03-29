@@ -51,3 +51,37 @@ exports.disableSubscription = async (req, res, next) => {
     next(err);
   }
 };
+
+exports.getAppNotifications = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+
+    const data = await service.getAppNotifications(userId);
+
+    res.json({
+      success: true,
+      data,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+exports.markAppNotificationRead = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { notificationId } = req.params;
+
+    const data = await service.markAppNotificationRead({
+      notificationId,
+      userId,
+    });
+
+    res.json({
+      success: true,
+      data,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
