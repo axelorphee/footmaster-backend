@@ -153,16 +153,22 @@ exports.disableMatchOverride = async ({
   userId,
   fixtureId,
 }) => {
-  await pool.query(
+  const result = await pool.query(
     `
-    UPDATE notification_match_overrides
-    SET is_enabled = false,
-        updated_at = CURRENT_TIMESTAMP
-    WHERE user_id = $1
-      AND fixture_id = $2
+    INSERT INTO notification_match_overrides (
+      user_id,
+      fixture_id,
+      is_enabled
+    )
+    VALUES ($1, $2, false)
+    ON CONFLICT (user_id, fixture_id)
+    DO UPDATE SET
+      is_enabled = false,
+      updated_at = CURRENT_TIMESTAMP
+    RETURNING *
     `,
     [userId, fixtureId]
   );
 
-  return { success: true };
+  return result.rows[0];
 };
