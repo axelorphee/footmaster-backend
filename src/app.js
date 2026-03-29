@@ -51,6 +51,7 @@ app.use('/api/account', accountRoutes);
 app.use('/api/fantasy', require('./routes/fantasy.routes'));
 app.use('/api/fantasy-migration', require('./routes/fantasyMigration.routes'));
 app.use('/api/notifications/subscriptions', notificationsRoutes);
+app.use('/api/notification-engine', require('./routes/notificationEngine.routes'));
 
 
 
