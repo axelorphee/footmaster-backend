@@ -1,6 +1,9 @@
 const pool = require('../config/database');
 const axios = require('axios');
 
+let engineInterval = null;
+let engineRunning = false;
+
 async function fetchLiveFixtures() {
   const response = await axios.get(
     'https://api-football-v1.p.rapidapi.com/v3/fixtures',
@@ -14,6 +17,33 @@ async function fetchLiveFixtures() {
   );
 
   return response.data?.response || [];
+}
+
+async function fetchFixtureById(fixtureId) {
+  const response = await axios.get(
+    'https://api-football-v1.p.rapidapi.com/v3/fixtures',
+    {
+      params: { id: fixtureId },
+      headers: {
+        'X-RapidAPI-Key': process.env.RAPIDAPI_KEY,
+        'X-RapidAPI-Host': process.env.RAPIDAPI_HOST,
+      },
+    }
+  );
+
+  return response.data?.response?.[0] || null;
+}
+
+async function getTrackedFixtureIds() {
+  const result = await pool.query(
+    `
+    SELECT DISTINCT fixture_id
+    FROM notification_match_overrides
+    WHERE is_enabled = true
+    `
+  );
+
+  return result.rows.map((row) => row.fixture_id);
 }
 
 function isStartedStatus(status) {
@@ -274,7 +304,10 @@ async function handleFixture(fixture) {
   const scoreChanged =
     stored.last_home_goals !== homeGoals || stored.last_away_goals !== awayGoals;
 
-  if (scoreChanged && (homeGoals > stored.last_home_goals || awayGoals > stored.last_away_goals)) {
+  if (
+    scoreChanged &&
+    (homeGoals > stored.last_home_goals || awayGoals > stored.last_away_goals)
+  ) {
     for (const userId of finalUsers) {
       await createAppNotification({
         userId,
@@ -346,8 +379,33 @@ async function handleFixture(fixture) {
   });
 }
 
-exports.runNotificationEngine = async () => {
-  const fixtures = await fetchLiveFixtures();
+async function runNotificationEngineOnce() {
+  const liveFixtures = await fetchLiveFixtures();
+  const trackedFixtureIds = await getTrackedFixtureIds();
+
+  const fixtureMap = new Map();
+
+  for (const fixture of liveFixtures) {
+    const fixtureId = fixture?.fixture?.id;
+    if (fixtureId) {
+      fixtureMap.set(fixtureId, fixture);
+    }
+  }
+
+  for (const fixtureId of trackedFixtureIds) {
+    if (!fixtureMap.has(fixtureId)) {
+      try {
+        const fixture = await fetchFixtureById(fixtureId);
+        if (fixture?.fixture?.id) {
+          fixtureMap.set(fixture.fixture.id, fixture);
+        }
+      } catch (err) {
+        console.error('Tracked fixture fetch error:', err.message);
+      }
+    }
+  }
+
+  const fixtures = Array.from(fixtureMap.values());
 
   for (const fixture of fixtures) {
     try {
@@ -358,4 +416,46 @@ exports.runNotificationEngine = async () => {
   }
 
   return { success: true, processed: fixtures.length };
+}
+
+exports.runNotificationEngine = async () => {
+  return await runNotificationEngineOnce();
+};
+
+exports.startNotificationEngine = async () => {
+  if (engineRunning) {
+    return { success: true, message: 'Engine already running' };
+  }
+
+  engineRunning = true;
+
+  await runNotificationEngineOnce();
+
+  engineInterval = setInterval(async () => {
+    try {
+      await runNotificationEngineOnce();
+    } catch (err) {
+      console.error('Notification engine loop error:', err.message);
+    }
+  }, 60000);
+
+  return { success: true, message: 'Engine started' };
+};
+
+exports.stopNotificationEngine = async () => {
+  if (engineInterval) {
+    clearInterval(engineInterval);
+    engineInterval = null;
+  }
+
+  engineRunning = false;
+
+  return { success: true, message: 'Engine stopped' };
+};
+
+exports.getNotificationEngineStatus = async () => {
+  return {
+    success: true,
+    isRunning: engineRunning,
+  };
 };
