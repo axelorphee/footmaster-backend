@@ -1,4 +1,5 @@
 const pool = require('../config/database');
+const axios = require('axios');
 
 exports.getSubscriptions = async (userId) => {
   const result = await pool.query(
@@ -9,6 +10,232 @@ exports.getSubscriptions = async (userId) => {
 
   return result.rows;
 };
+
+function formatDateYYYYMMDD(date) {
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(date.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function normalizeStatus(status) {
+  return String(status || '').toUpperCase();
+}
+
+function isStartedStatus(status) {
+  return ['1H', 'HT', '2H', 'ET', 'P', 'BT', 'PEN'].includes(
+    normalizeStatus(status)
+  );
+}
+
+function isFinishedStatus(status) {
+  return ['FT', 'AET', 'PEN'].includes(normalizeStatus(status));
+}
+
+function isHalftimeStatus(status) {
+  return normalizeStatus(status) === 'HT';
+}
+
+function isSecondHalfStatus(status) {
+  return normalizeStatus(status) === '2H';
+}
+
+function isExtraTimeStatus(status) {
+  return normalizeStatus(status) === 'ET';
+}
+
+function isPenaltyShootoutStatus(status) {
+  return ['P', 'PEN'].includes(normalizeStatus(status));
+}
+
+async function fetchFixturesByTeamAndDate(teamId, date) {
+  const response = await axios.get(
+    'https://api-football-v1.p.rapidapi.com/v3/fixtures',
+    {
+      params: {
+        team: teamId,
+        date,
+      },
+      headers: {
+        'X-RapidAPI-Key': process.env.RAPIDAPI_KEY,
+        'X-RapidAPI-Host': process.env.RAPIDAPI_HOST,
+      },
+    }
+  );
+
+  return response.data?.response || [];
+}
+
+async function fetchFixturesByLeagueAndDate(leagueId, date) {
+  const response = await axios.get(
+    'https://api-football-v1.p.rapidapi.com/v3/fixtures',
+    {
+      params: {
+        league: leagueId,
+        date,
+      },
+      headers: {
+        'X-RapidAPI-Key': process.env.RAPIDAPI_KEY,
+        'X-RapidAPI-Host': process.env.RAPIDAPI_HOST,
+      },
+    }
+  );
+
+  return response.data?.response || [];
+}
+
+async function upsertDiscoveredFixtureState(fixture) {
+  const fixtureId = fixture?.fixture?.id;
+  if (!fixtureId) return;
+
+  const existingStateResult = await pool.query(
+    `
+    SELECT *
+    FROM notification_match_state
+    WHERE fixture_id = $1
+    `,
+    [fixtureId]
+  );
+
+  const existingState = existingStateResult.rows[0] || null;
+
+  const fixtureDate = fixture?.fixture?.date ?? null;
+  const leagueId = fixture?.league?.id ?? null;
+  const homeTeamId = fixture?.teams?.home?.id ?? null;
+  const awayTeamId = fixture?.teams?.away?.id ?? null;
+  const status = normalizeStatus(fixture?.fixture?.status?.short || '');
+  const homeGoals = fixture?.goals?.home ?? 0;
+  const awayGoals = fixture?.goals?.away ?? 0;
+
+  await pool.query(
+    `
+    INSERT INTO notification_match_state (
+      fixture_id,
+      fixture_date,
+      league_id,
+      home_team_id,
+      away_team_id,
+      last_status,
+      last_home_goals,
+      last_away_goals,
+      last_is_lineup_available,
+      thirty_min_notified,
+      lineup_notified,
+      match_started_notified,
+      halftime_notified,
+      second_half_started_notified,
+      extra_time_started_notified,
+      penalty_shootout_started_notified,
+      match_finished_notified,
+      updated_at
+    )
+    VALUES (
+      $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,CURRENT_TIMESTAMP
+    )
+    ON CONFLICT (fixture_id)
+    DO UPDATE SET
+      fixture_date = COALESCE(EXCLUDED.fixture_date, notification_match_state.fixture_date),
+      league_id = EXCLUDED.league_id,
+      home_team_id = EXCLUDED.home_team_id,
+      away_team_id = EXCLUDED.away_team_id,
+      last_status = EXCLUDED.last_status,
+      last_home_goals = EXCLUDED.last_home_goals,
+      last_away_goals = EXCLUDED.last_away_goals,
+      last_is_lineup_available = EXCLUDED.last_is_lineup_available,
+      thirty_min_notified = EXCLUDED.thirty_min_notified,
+      lineup_notified = EXCLUDED.lineup_notified,
+      match_started_notified = EXCLUDED.match_started_notified,
+      halftime_notified = EXCLUDED.halftime_notified,
+      second_half_started_notified = EXCLUDED.second_half_started_notified,
+      extra_time_started_notified = EXCLUDED.extra_time_started_notified,
+      penalty_shootout_started_notified = EXCLUDED.penalty_shootout_started_notified,
+      match_finished_notified = EXCLUDED.match_finished_notified,
+      updated_at = CURRENT_TIMESTAMP
+    `,
+    [
+      fixtureId,
+      fixtureDate,
+      leagueId,
+      homeTeamId,
+      awayTeamId,
+      status,
+      homeGoals,
+      awayGoals,
+      existingState?.last_is_lineup_available ?? false,
+      existingState?.thirty_min_notified ?? false,
+      existingState?.lineup_notified ?? false,
+      existingState?.match_started_notified ??
+        (isStartedStatus(status) || isFinishedStatus(status)),
+      existingState?.halftime_notified ??
+        (
+          isHalftimeStatus(status) ||
+          isSecondHalfStatus(status) ||
+          isExtraTimeStatus(status) ||
+          isPenaltyShootoutStatus(status) ||
+          isFinishedStatus(status)
+        ),
+      existingState?.second_half_started_notified ??
+        (
+          isSecondHalfStatus(status) ||
+          isExtraTimeStatus(status) ||
+          isPenaltyShootoutStatus(status) ||
+          isFinishedStatus(status)
+        ),
+      existingState?.extra_time_started_notified ??
+        (
+          isExtraTimeStatus(status) ||
+          isPenaltyShootoutStatus(status) ||
+          isFinishedStatus(status)
+        ),
+      existingState?.penalty_shootout_started_notified ??
+        (
+          isPenaltyShootoutStatus(status) ||
+          (isFinishedStatus(status) && status === 'PEN')
+        ),
+      existingState?.match_finished_notified ?? isFinishedStatus(status),
+    ]
+  );
+}
+
+async function seedFixturesForSubscription({ sourceType, sourceId }) {
+  const now = new Date();
+  const todayStr = formatDateYYYYMMDD(now);
+
+  const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  const tomorrowStr = formatDateYYYYMMDD(tomorrow);
+
+  let fixtures = [];
+
+  if (sourceType === 'team') {
+    const todayFixtures = await fetchFixturesByTeamAndDate(sourceId, todayStr);
+    const tomorrowFixtures = await fetchFixturesByTeamAndDate(sourceId, tomorrowStr);
+    fixtures = [...todayFixtures, ...tomorrowFixtures];
+  } else if (sourceType === 'competition') {
+    const todayFixtures = await fetchFixturesByLeagueAndDate(sourceId, todayStr);
+    const tomorrowFixtures = await fetchFixturesByLeagueAndDate(sourceId, tomorrowStr);
+    fixtures = [...todayFixtures, ...tomorrowFixtures];
+  } else {
+    return { seeded: 0 };
+  }
+
+  const fixtureMap = new Map();
+
+  for (const fixture of fixtures) {
+    const fixtureId = fixture?.fixture?.id;
+    if (fixtureId) {
+      fixtureMap.set(fixtureId, fixture);
+    }
+  }
+
+  let seeded = 0;
+
+  for (const fixture of fixtureMap.values()) {
+    await upsertDiscoveredFixtureState(fixture);
+    seeded++;
+  }
+
+  return { seeded };
+}
 
 exports.upsertSubscription = async ({
   userId,
@@ -32,6 +259,17 @@ exports.upsertSubscription = async ({
     `,
     [userId, sourceType, sourceId]
   );
+
+  if (sourceType === 'team' || sourceType === 'competition') {
+    try {
+      await seedFixturesForSubscription({
+        sourceType,
+        sourceId,
+      });
+    } catch (err) {
+      console.error('Subscription fixture seed error:', err.message);
+    }
+  }
 
   return result.rows[0];
 };

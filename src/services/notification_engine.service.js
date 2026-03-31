@@ -52,18 +52,84 @@ async function fetchFixtureLineups(fixtureId) {
   return response.data?.response || [];
 }
 
-async function getTrackedFixtureIdsToPoll() {
+async function shouldFetchLiveFixtures() {
   const result = await pool.query(
     `
-    SELECT DISTINCT o.fixture_id
-    FROM notification_match_overrides o
-    JOIN notification_match_state s
-      ON s.fixture_id = o.fixture_id
-    WHERE o.is_enabled = true
-      AND COALESCE(s.last_status, '') NOT IN ('FT', 'AET', 'PEN')
+    SELECT 1
+    FROM notification_match_state s
+    WHERE COALESCE(s.last_status, '') NOT IN ('FT', 'AET', 'PEN')
+      AND s.fixture_date IS NOT NULL
       AND (
         COALESCE(s.last_status, '') IN ('1H', 'HT', '2H', 'ET', 'P', 'BT', 'PEN')
-        OR s.fixture_date <= NOW() + INTERVAL '90 minutes'
+        OR (
+          s.fixture_date >= NOW() - INTERVAL '4 hours'
+          AND s.fixture_date <= NOW() + INTERVAL '90 minutes'
+        )
+      )
+      AND (
+        EXISTS (
+          SELECT 1
+          FROM notification_match_overrides o
+          WHERE o.fixture_id = s.fixture_id
+            AND o.is_enabled = true
+        )
+        OR EXISTS (
+          SELECT 1
+          FROM notification_subscriptions ns
+          WHERE ns.is_enabled = true
+            AND ns.source_type = 'competition'
+            AND ns.source_id = s.league_id
+        )
+        OR EXISTS (
+          SELECT 1
+          FROM notification_subscriptions ns
+          WHERE ns.is_enabled = true
+            AND ns.source_type = 'team'
+            AND ns.source_id IN (s.home_team_id, s.away_team_id)
+        )
+      )
+    LIMIT 1
+    `
+  );
+
+  return result.rows.length > 0;
+}
+
+async function getRelevantFixtureIdsToPoll() {
+  const result = await pool.query(
+    `
+    SELECT DISTINCT s.fixture_id
+    FROM notification_match_state s
+    WHERE COALESCE(s.last_status, '') NOT IN ('FT', 'AET', 'PEN')
+      AND s.fixture_date IS NOT NULL
+      AND (
+        COALESCE(s.last_status, '') IN ('1H', 'HT', '2H', 'ET', 'P', 'BT', 'PEN')
+        OR (
+          s.fixture_date >= NOW() - INTERVAL '4 hours'
+          AND s.fixture_date <= NOW() + INTERVAL '90 minutes'
+        )
+      )
+      AND (
+        EXISTS (
+          SELECT 1
+          FROM notification_match_overrides o
+          WHERE o.fixture_id = s.fixture_id
+            AND o.is_enabled = true
+        )
+        OR EXISTS (
+          SELECT 1
+          FROM notification_subscriptions ns
+          WHERE ns.is_enabled = true
+            AND ns.source_type = 'competition'
+            AND ns.source_id = s.league_id
+        )
+        OR EXISTS (
+          SELECT 1
+          FROM notification_subscriptions ns
+          WHERE ns.is_enabled = true
+            AND ns.source_type = 'team'
+            AND ns.source_id IN (s.home_team_id, s.away_team_id)
+        )
       )
     `
   );
@@ -634,8 +700,9 @@ if (
 }
 
 async function initializeTrackedFixturesState() {
-  const liveFixtures = await fetchLiveFixtures();
-  const trackedFixtureIds = await getTrackedFixtureIdsToPoll();
+  const trackedFixtureIds = await getRelevantFixtureIdsToPoll();
+  const needLiveFetch = await shouldFetchLiveFixtures();
+  const liveFixtures = needLiveFetch ? await fetchLiveFixtures() : [];
 
   const fixtureMap = new Map();
 
@@ -746,8 +813,9 @@ async function initializeTrackedFixturesState() {
 }
 
 async function runNotificationEngineOnce() {
-  const liveFixtures = await fetchLiveFixtures();
-  const trackedFixtureIds = await getTrackedFixtureIdsToPoll();
+  const trackedFixtureIds = await getRelevantFixtureIdsToPoll();
+  const needLiveFetch = await shouldFetchLiveFixtures();
+  const liveFixtures = needLiveFetch ? await fetchLiveFixtures() : [];
 
   const fixtureMap = new Map();
 
