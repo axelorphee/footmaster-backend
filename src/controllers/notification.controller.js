@@ -137,3 +137,80 @@ exports.disableMatchOverride = async (req, res, next) => {
     next(err);
   }
 };
+
+exports.getNotificationPreferences = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+
+    const data = await service.getNotificationPreferences(userId);
+
+    res.json({
+      success: true,
+      data,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+exports.updateNotificationPreference = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { eventType } = req.params;
+    const { is_enabled } = req.body;
+
+    const data = await service.upsertNotificationPreference({
+      userId,
+      eventType,
+      isEnabled: is_enabled,
+    });
+
+    res.json({
+      success: true,
+      data,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+exports.getMatchEventPreferences = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { fixtureId } = req.params;
+
+    const data = await service.getMatchEventPreferences({
+      userId,
+      fixtureId,
+    });
+
+    res.json({
+      success: true,
+      data,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+exports.updateMatchEventPreference = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { fixtureId, eventType } = req.params;
+    const { is_enabled } = req.body;
+
+    const data = await service.upsertMatchEventPreference({
+      userId,
+      fixtureId,
+      eventType,
+      isEnabled: is_enabled,
+    });
+
+    res.json({
+      success: true,
+      data,
+    });
+  } catch (err) {
+    next(err);
+  }
+};

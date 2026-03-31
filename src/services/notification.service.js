@@ -172,3 +172,136 @@ exports.disableMatchOverride = async ({
 
   return result.rows[0];
 };
+
+const ALLOWED_NOTIFICATION_EVENT_TYPES = [
+  'match_30min',
+  'lineup_available',
+  'match_started',
+  'halftime',
+  'second_half_started',
+  'goal',
+  'extra_time_started',
+  'penalty_shootout_started',
+  'match_finished',
+  'transfer_news',
+];
+
+exports.getNotificationPreferences = async (userId) => {
+  const result = await pool.query(
+    `
+    SELECT event_type, is_enabled, created_at, updated_at
+    FROM notification_user_preferences
+    WHERE user_id = $1
+    ORDER BY event_type ASC
+    `,
+    [userId]
+  );
+
+  const savedMap = new Map(
+    result.rows.map((row) => [row.event_type, row])
+  );
+
+  return ALLOWED_NOTIFICATION_EVENT_TYPES.map((eventType) => {
+    const existing = savedMap.get(eventType);
+
+    return {
+      event_type: eventType,
+      is_enabled: existing ? existing.is_enabled : true,
+      created_at: existing ? existing.created_at : null,
+      updated_at: existing ? existing.updated_at : null,
+    };
+  });
+};
+
+exports.upsertNotificationPreference = async ({
+  userId,
+  eventType,
+  isEnabled,
+}) => {
+  if (!ALLOWED_NOTIFICATION_EVENT_TYPES.includes(eventType)) {
+    const error = new Error('Invalid notification event type');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const result = await pool.query(
+    `
+    INSERT INTO notification_user_preferences (
+      user_id,
+      event_type,
+      is_enabled
+    )
+    VALUES ($1, $2, $3)
+    ON CONFLICT (user_id, event_type)
+    DO UPDATE SET
+      is_enabled = EXCLUDED.is_enabled,
+      updated_at = CURRENT_TIMESTAMP
+    RETURNING user_id, event_type, is_enabled, created_at, updated_at
+    `,
+    [userId, eventType, isEnabled]
+  );
+
+  return result.rows[0];
+};
+
+exports.getMatchEventPreferences = async ({ userId, fixtureId }) => {
+  const result = await pool.query(
+    `
+    SELECT event_type, is_enabled, created_at, updated_at
+    FROM notification_match_event_preferences
+    WHERE user_id = $1
+      AND fixture_id = $2
+    ORDER BY event_type ASC
+    `,
+    [userId, fixtureId]
+  );
+
+  const savedMap = new Map(
+    result.rows.map((row) => [row.event_type, row])
+  );
+
+  return ALLOWED_NOTIFICATION_EVENT_TYPES.map((eventType) => {
+    const existing = savedMap.get(eventType);
+
+    return {
+      fixture_id: Number(fixtureId),
+      event_type: eventType,
+      is_enabled: existing ? existing.is_enabled : true,
+      created_at: existing ? existing.created_at : null,
+      updated_at: existing ? existing.updated_at : null,
+    };
+  });
+};
+
+exports.upsertMatchEventPreference = async ({
+  userId,
+  fixtureId,
+  eventType,
+  isEnabled,
+}) => {
+  if (!ALLOWED_NOTIFICATION_EVENT_TYPES.includes(eventType)) {
+    const error = new Error('Invalid notification event type');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const result = await pool.query(
+    `
+    INSERT INTO notification_match_event_preferences (
+      user_id,
+      fixture_id,
+      event_type,
+      is_enabled
+    )
+    VALUES ($1, $2, $3, $4)
+    ON CONFLICT (user_id, fixture_id, event_type)
+    DO UPDATE SET
+      is_enabled = EXCLUDED.is_enabled,
+      updated_at = CURRENT_TIMESTAMP
+    RETURNING user_id, fixture_id, event_type, is_enabled, created_at, updated_at
+    `,
+    [userId, fixtureId, eventType, isEnabled]
+  );
+
+  return result.rows[0];
+};

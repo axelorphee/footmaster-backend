@@ -16,10 +16,34 @@ router.get('/matches', authMiddleware, controller.getMatchOverrides);
 
 router.post('/matches', authMiddleware, controller.enableMatchOverride);
 
+router.get(
+  '/matches/:fixtureId/preferences',
+  authMiddleware,
+  controller.getMatchEventPreferences
+);
+
+router.put(
+  '/matches/:fixtureId/preferences/:eventType',
+  authMiddleware,
+  controller.updateMatchEventPreference
+);
+
 router.delete(
   '/matches/:fixtureId',
   authMiddleware,
   controller.disableMatchOverride
+);
+
+router.get(
+  '/preferences',
+  authMiddleware,
+  controller.getNotificationPreferences
+);
+
+router.put(
+  '/preferences/:eventType',
+  authMiddleware,
+  controller.updateNotificationPreference
 );
 
 router.get('/', authMiddleware, controller.getSubscriptions);

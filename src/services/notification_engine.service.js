@@ -315,9 +315,57 @@ async function createAppNotification({
   );
 }
 
+async function isNotificationEnabledForUser({
+  userId,
+  fixtureId,
+  eventType,
+}) {
+  const matchPreferenceResult = await pool.query(
+    `
+    SELECT is_enabled
+    FROM notification_match_event_preferences
+    WHERE user_id = $1
+      AND fixture_id = $2
+      AND event_type = $3
+    `,
+    [userId, fixtureId, eventType]
+  );
+
+  if (matchPreferenceResult.rows.length > 0) {
+    return matchPreferenceResult.rows[0].is_enabled;
+  }
+
+  const globalPreferenceResult = await pool.query(
+    `
+    SELECT is_enabled
+    FROM notification_user_preferences
+    WHERE user_id = $1
+      AND event_type = $2
+    `,
+    [userId, eventType]
+  );
+
+  if (globalPreferenceResult.rows.length > 0) {
+    return globalPreferenceResult.rows[0].is_enabled;
+  }
+
+  return true;
+}
+
 async function sendNotificationsToUsers(users, payloadBuilder) {
   for (const userId of users) {
     const payload = payloadBuilder(userId);
+
+    const isEnabled = await isNotificationEnabledForUser({
+      userId,
+      fixtureId: payload.fixtureId,
+      eventType: payload.eventType,
+    });
+
+    if (!isEnabled) {
+      continue;
+    }
+
     await createAppNotification(payload);
   }
 }
@@ -406,7 +454,7 @@ async function handleFixture(fixture) {
       sourceType: 'fixture',
       sourceId: fixtureId,
       fixtureId,
-      eventType: 'thirty_min_before_match',
+      eventType: 'match_30min',
       title: `${homeTeamName} vs ${awayTeamName}`,
       message: `Le match commence dans moins de 30 minutes.`,
       metadata,
