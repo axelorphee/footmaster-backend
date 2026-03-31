@@ -2,7 +2,7 @@ const authService = require('../services/auth.service');
 
 exports.register = async (req, res, next) => {
   try {
-    const { email, password, username } = req.body;
+    const { email, password, username, admin_code } = req.body;
 
     if (!email || !password || !username) {
       return res.status(400).json({
@@ -11,7 +11,12 @@ exports.register = async (req, res, next) => {
       });
     }
 
-    const result = await authService.register(email, password, username);
+    const result = await authService.register(
+      email,
+      password,
+      username,
+      admin_code || null
+    );
 
     res.status(201).json({
       success: true,
@@ -62,6 +67,33 @@ exports.verifyEmail = async (req, res, next) => {
     res.status(200).json({
       success: true,
       message: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+exports.claimAppAdmin = async (req, res, next) => {
+  try {
+    const { email, password, admin_code } = req.body;
+
+    if (!email || !password || !admin_code) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email, password and admin_code are required',
+      });
+    }
+
+    const user = await authService.claimAppAdmin(
+      email,
+      password,
+      admin_code
+    );
+
+    res.status(200).json({
+      success: true,
+      message: 'App admin granted successfully',
+      data: user,
     });
   } catch (err) {
     next(err);

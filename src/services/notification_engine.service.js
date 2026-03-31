@@ -2,6 +2,8 @@ const pool = require('../config/database');
 const axios = require('axios');
 const transferNotificationService = require('./notification_transfer.service');
 const notificationService = require('./notification.service');
+const notificationEngineControlService = require('./notificationEngineControl.service');
+const userPresenceService = require('./userPresence.service');
 
 let engineInterval = null;
 let transferInterval = null;
@@ -10,6 +12,7 @@ let engineRunning = false;
 const TRACKING_WINDOW_MINUTES = 90;
 const SLOW_REFRESH_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const SLOW_REFRESH_DAYS_AHEAD = 7;
+const ACTIVE_USER_WINDOW_MINUTES = 10;
 
 async function fetchLiveFixtures() {
   const response = await axios.get(
@@ -54,6 +57,44 @@ async function fetchFixtureLineups(fixtureId) {
   );
 
   return response.data?.response || [];
+}
+
+async function isGlobalNotificationEngineEnabled() {
+  const control =
+    await notificationEngineControlService.getNotificationEngineControl();
+
+  return control.enabled === true;
+}
+
+async function hasRecentlyActiveUsers() {
+  return await userPresenceService.hasRecentlyActiveUsers(
+    ACTIVE_USER_WINDOW_MINUTES
+  );
+}
+
+async function canRunNotificationEngine() {
+  const isEnabled = await isGlobalNotificationEngineEnabled();
+
+  if (!isEnabled) {
+    return {
+      allowed: false,
+      reason: 'global_disabled',
+    };
+  }
+
+  const hasActiveUsers = await hasRecentlyActiveUsers();
+
+  if (!hasActiveUsers) {
+    return {
+      allowed: false,
+      reason: 'no_recently_active_users',
+    };
+  }
+
+  return {
+    allowed: true,
+    reason: null,
+  };
 }
 
 async function shouldFetchLiveFixtures() {
@@ -254,30 +295,30 @@ async function upsertMatchState({
   const result = await pool.query(
     `
     INSERT INTO notification_match_state (
-  fixture_id,
-  fixture_date,
-  league_id,
-  home_team_id,
-  away_team_id,
-  last_status,
-  last_home_goals,
-  last_away_goals,
-  last_is_lineup_available,
-  thirty_min_notified,
-  lineup_notified,
-  match_started_notified,
-  halftime_notified,
-  second_half_started_notified,
-  extra_time_started_notified,
-  penalty_shootout_started_notified,
-  match_finished_notified,
-  updated_at
-)
+      fixture_id,
+      fixture_date,
+      league_id,
+      home_team_id,
+      away_team_id,
+      last_status,
+      last_home_goals,
+      last_away_goals,
+      last_is_lineup_available,
+      thirty_min_notified,
+      lineup_notified,
+      match_started_notified,
+      halftime_notified,
+      second_half_started_notified,
+      extra_time_started_notified,
+      penalty_shootout_started_notified,
+      match_finished_notified,
+      updated_at
+    )
     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,CURRENT_TIMESTAMP)
     ON CONFLICT (fixture_id)
     DO UPDATE SET
-  fixture_date = COALESCE(EXCLUDED.fixture_date, notification_match_state.fixture_date),
-  league_id = EXCLUDED.league_id,
+      fixture_date = COALESCE(EXCLUDED.fixture_date, notification_match_state.fixture_date),
+      league_id = EXCLUDED.league_id,
       home_team_id = EXCLUDED.home_team_id,
       away_team_id = EXCLUDED.away_team_id,
       last_status = EXCLUDED.last_status,
@@ -319,7 +360,12 @@ async function upsertMatchState({
   return result.rows[0];
 }
 
-async function getUsersForFixture({ fixtureId, leagueId, homeTeamId, awayTeamId }) {
+async function getUsersForFixture({
+  fixtureId,
+  leagueId,
+  homeTeamId,
+  awayTeamId,
+}) {
   const result = await pool.query(
     `
     SELECT DISTINCT user_id
@@ -537,7 +583,11 @@ async function handleFixture(fixture) {
     return;
   }
 
-  if (!thirtyMinNotified && !isStartedStatus(status) && isWithinThirtyMinuteWindow(fixtureDate)) {
+  if (
+    !thirtyMinNotified &&
+    !isStartedStatus(status) &&
+    isWithinThirtyMinuteWindow(fixtureDate)
+  ) {
     await sendNotificationsToUsers(finalUsers, (userId) => ({
       userId,
       sourceType: 'fixture',
@@ -704,6 +754,17 @@ async function handleFixture(fixture) {
 }
 
 async function initializeTrackedFixturesState() {
+  const engineState = await canRunNotificationEngine();
+
+  if (!engineState.allowed) {
+    return {
+      success: true,
+      initialized: 0,
+      skipped: true,
+      reason: engineState.reason,
+    };
+  }
+
   const trackedFixtureIds = await getRelevantFixtureIdsToPoll();
   const needLiveFetch = await shouldFetchLiveFixtures();
   const liveFixtures = needLiveFetch ? await fetchLiveFixtures() : [];
@@ -757,7 +818,9 @@ async function initializeTrackedFixturesState() {
       }
 
       const thirtyMinNotified =
-        isWithinThirtyMinuteWindow(fixtureDate) || isStartedStatus(status) || isFinishedStatus(status);
+        isWithinThirtyMinuteWindow(fixtureDate) ||
+        isStartedStatus(status) ||
+        isFinishedStatus(status);
 
       const matchStartedNotified =
         isStartedStatus(status) || isFinishedStatus(status);
@@ -784,8 +847,7 @@ async function initializeTrackedFixturesState() {
         isPenaltyShootoutStatus(status) ||
         (isFinishedStatus(status) && status === 'PEN');
 
-      const matchFinishedNotified =
-        isFinishedStatus(status);
+      const matchFinishedNotified = isFinishedStatus(status);
 
       const lineupNotified = lineupAvailable;
 
@@ -817,6 +879,17 @@ async function initializeTrackedFixturesState() {
 }
 
 async function runNotificationEngineOnce() {
+  const engineState = await canRunNotificationEngine();
+
+  if (!engineState.allowed) {
+    return {
+      success: true,
+      processed: 0,
+      skipped: true,
+      reason: engineState.reason,
+    };
+  }
+
   const trackedFixtureIds = await getRelevantFixtureIdsToPoll();
   const needLiveFetch = await shouldFetchLiveFixtures();
   const liveFixtures = needLiveFetch ? await fetchLiveFixtures() : [];
@@ -857,6 +930,18 @@ async function runNotificationEngineOnce() {
 }
 
 async function runSlowSubscriptionRefreshOnce() {
+  const engineState = await canRunNotificationEngine();
+
+  if (!engineState.allowed) {
+    return {
+      success: true,
+      processed: 0,
+      seeded: 0,
+      skipped: true,
+      reason: engineState.reason,
+    };
+  }
+
   const result = await notificationService.refreshTrackedSubscriptionsFixtures({
     daysAhead: SLOW_REFRESH_DAYS_AHEAD,
     useCache: true,
@@ -905,6 +990,12 @@ exports.startNotificationEngine = async () => {
 
   transferInterval = setInterval(async () => {
     try {
+      const engineState = await canRunNotificationEngine();
+
+      if (!engineState.allowed) {
+        return;
+      }
+
       await transferNotificationService.runTransferNotificationEngine();
     } catch (err) {
       console.error('Transfer notification engine loop error:', err.message);
