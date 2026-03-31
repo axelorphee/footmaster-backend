@@ -453,13 +453,16 @@ async function handleFixture(fixture) {
     matchStartedNotified = true;
   }
 
-  const scoreChanged =
-    stored.last_home_goals !== homeGoals || stored.last_away_goals !== awayGoals;
+  const previousHomeGoals = stored.last_home_goals ?? 0;
+const previousAwayGoals = stored.last_away_goals ?? 0;
 
-  if (
-    scoreChanged &&
-    (homeGoals > stored.last_home_goals || awayGoals > stored.last_away_goals)
-  ) {
+const scoreChanged =
+  previousHomeGoals !== homeGoals || previousAwayGoals !== awayGoals;
+
+if (
+  scoreChanged &&
+  (homeGoals > previousHomeGoals || awayGoals > previousAwayGoals)
+) {
     await sendNotificationsToUsers(finalUsers, (userId) => ({
       userId,
       sourceType: 'fixture',
@@ -598,11 +601,54 @@ async function initializeTrackedFixturesState() {
       const leagueId = fixture?.league?.id ?? null;
       const homeTeamId = fixture?.teams?.home?.id ?? null;
       const awayTeamId = fixture?.teams?.away?.id ?? null;
-      const status = String(fixture?.fixture?.status?.short || '').toUpperCase();
+      const status = normalizeStatus(fixture?.fixture?.status?.short || '');
       const homeGoals = fixture?.goals?.home ?? 0;
       const awayGoals = fixture?.goals?.away ?? 0;
+      const fixtureDate = fixture?.fixture?.date ?? null;
 
-      const stored = await getStoredState(fixtureId);
+      let lineupAvailable = false;
+
+      try {
+        if (!isStartedStatus(status) && !isFinishedStatus(status)) {
+          const lineups = await fetchFixtureLineups(fixtureId);
+          lineupAvailable = Array.isArray(lineups) && lineups.length > 0;
+        }
+      } catch (err) {
+        console.error('Baseline lineup fetch error:', err.message);
+      }
+
+      const thirtyMinNotified =
+        isWithinThirtyMinuteWindow(fixtureDate) || isStartedStatus(status) || isFinishedStatus(status);
+
+      const matchStartedNotified =
+        isStartedStatus(status) || isFinishedStatus(status);
+
+      const halftimeNotified =
+        isHalftimeStatus(status) ||
+        isSecondHalfStatus(status) ||
+        isExtraTimeStatus(status) ||
+        isPenaltyShootoutStatus(status) ||
+        isFinishedStatus(status);
+
+      const secondHalfStartedNotified =
+        isSecondHalfStatus(status) ||
+        isExtraTimeStatus(status) ||
+        isPenaltyShootoutStatus(status) ||
+        isFinishedStatus(status);
+
+      const extraTimeStartedNotified =
+        isExtraTimeStatus(status) ||
+        isPenaltyShootoutStatus(status) ||
+        isFinishedStatus(status);
+
+      const penaltyShootoutStartedNotified =
+        isPenaltyShootoutStatus(status) ||
+        (isFinishedStatus(status) && status === 'PEN');
+
+      const matchFinishedNotified =
+        isFinishedStatus(status);
+
+      const lineupNotified = lineupAvailable;
 
       await upsertMatchState({
         fixtureId,
@@ -612,18 +658,15 @@ async function initializeTrackedFixturesState() {
         status,
         homeGoals,
         awayGoals,
-        lastIsLineupAvailable: stored?.last_is_lineup_available ?? false,
-        thirtyMinNotified: stored?.thirty_min_notified ?? false,
-        lineupNotified: stored?.lineup_notified ?? false,
-        matchStartedNotified: stored?.match_started_notified ?? false,
-        halftimeNotified: stored?.halftime_notified ?? false,
-        secondHalfStartedNotified:
-          stored?.second_half_started_notified ?? false,
-        extraTimeStartedNotified:
-          stored?.extra_time_started_notified ?? false,
-        penaltyShootoutStartedNotified:
-          stored?.penalty_shootout_started_notified ?? false,
-        matchFinishedNotified: stored?.match_finished_notified ?? false,
+        lastIsLineupAvailable: lineupAvailable,
+        thirtyMinNotified,
+        lineupNotified,
+        matchStartedNotified,
+        halftimeNotified,
+        secondHalfStartedNotified,
+        extraTimeStartedNotified,
+        penaltyShootoutStartedNotified,
+        matchFinishedNotified,
       });
     } catch (err) {
       console.error('Notification engine baseline error:', err.message);
