@@ -104,11 +104,12 @@ exports.getMatchOverrides = async (req, res, next) => {
 exports.enableMatchOverride = async (req, res, next) => {
   try {
     const userId = req.user.id;
-    const { fixture_id } = req.body;
+    const { fixture_id, fixture_date } = req.body;
 
     const data = await service.upsertMatchOverride({
       userId,
       fixtureId: fixture_id,
+      fixtureDate: fixture_date,
     });
 
     res.status(201).json({

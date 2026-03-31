@@ -5,6 +5,7 @@ const transferNotificationService = require('./notification_transfer.service');
 let engineInterval = null;
 let transferInterval = null;
 let engineRunning = false;
+const TRACKING_WINDOW_MINUTES = 90;
 
 async function fetchLiveFixtures() {
   const response = await axios.get(
@@ -51,12 +52,19 @@ async function fetchFixtureLineups(fixtureId) {
   return response.data?.response || [];
 }
 
-async function getTrackedFixtureIds() {
+async function getTrackedFixtureIdsToPoll() {
   const result = await pool.query(
     `
-    SELECT DISTINCT fixture_id
-    FROM notification_match_overrides
-    WHERE is_enabled = true
+    SELECT DISTINCT o.fixture_id
+    FROM notification_match_overrides o
+    JOIN notification_match_state s
+      ON s.fixture_id = o.fixture_id
+    WHERE o.is_enabled = true
+      AND COALESCE(s.last_status, '') NOT IN ('FT', 'AET', 'PEN')
+      AND (
+        COALESCE(s.last_status, '') IN ('1H', 'HT', '2H', 'ET', 'P', 'BT', 'PEN')
+        OR s.fixture_date <= NOW() + INTERVAL '90 minutes'
+      )
     `
   );
 
@@ -106,6 +114,12 @@ function isWithinThirtyMinuteWindow(fixtureDate) {
   return minutes >= 0 && minutes <= 30;
 }
 
+function isWithinTrackingWindow(fixtureDate) {
+  const minutes = minutesUntilKickoff(fixtureDate);
+  if (minutes === null) return false;
+  return minutes <= TRACKING_WINDOW_MINUTES;
+}
+
 function buildFixtureMetadata({
   fixtureId,
   leagueId,
@@ -150,6 +164,7 @@ async function getStoredState(fixtureId) {
 
 async function upsertMatchState({
   fixtureId,
+  fixtureDate = null,
   leagueId,
   homeTeamId,
   awayTeamId,
@@ -169,28 +184,30 @@ async function upsertMatchState({
   const result = await pool.query(
     `
     INSERT INTO notification_match_state (
-      fixture_id,
-      league_id,
-      home_team_id,
-      away_team_id,
-      last_status,
-      last_home_goals,
-      last_away_goals,
-      last_is_lineup_available,
-      thirty_min_notified,
-      lineup_notified,
-      match_started_notified,
-      halftime_notified,
-      second_half_started_notified,
-      extra_time_started_notified,
-      penalty_shootout_started_notified,
-      match_finished_notified,
-      updated_at
-    )
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,CURRENT_TIMESTAMP)
+  fixture_id,
+  fixture_date,
+  league_id,
+  home_team_id,
+  away_team_id,
+  last_status,
+  last_home_goals,
+  last_away_goals,
+  last_is_lineup_available,
+  thirty_min_notified,
+  lineup_notified,
+  match_started_notified,
+  halftime_notified,
+  second_half_started_notified,
+  extra_time_started_notified,
+  penalty_shootout_started_notified,
+  match_finished_notified,
+  updated_at
+)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,CURRENT_TIMESTAMP)
     ON CONFLICT (fixture_id)
     DO UPDATE SET
-      league_id = EXCLUDED.league_id,
+  fixture_date = COALESCE(EXCLUDED.fixture_date, notification_match_state.fixture_date),
+  league_id = EXCLUDED.league_id,
       home_team_id = EXCLUDED.home_team_id,
       away_team_id = EXCLUDED.away_team_id,
       last_status = EXCLUDED.last_status,
@@ -208,24 +225,25 @@ async function upsertMatchState({
       updated_at = CURRENT_TIMESTAMP
     RETURNING *
     `,
-    [
-      fixtureId,
-      leagueId,
-      homeTeamId,
-      awayTeamId,
-      status,
-      homeGoals,
-      awayGoals,
-      lastIsLineupAvailable,
-      thirtyMinNotified,
-      lineupNotified,
-      matchStartedNotified,
-      halftimeNotified,
-      secondHalfStartedNotified,
-      extraTimeStartedNotified,
-      penaltyShootoutStartedNotified,
-      matchFinishedNotified,
-    ]
+   [
+  fixtureId,
+  fixtureDate,
+  leagueId,
+  homeTeamId,
+  awayTeamId,
+  status,
+  homeGoals,
+  awayGoals,
+  lastIsLineupAvailable,
+  thirtyMinNotified,
+  lineupNotified,
+  matchStartedNotified,
+  halftimeNotified,
+  secondHalfStartedNotified,
+  extraTimeStartedNotified,
+  penaltyShootoutStartedNotified,
+  matchFinishedNotified,
+]
   );
 
   return result.rows[0];
@@ -426,27 +444,28 @@ async function handleFixture(fixture) {
   let matchFinishedNotified = stored?.match_finished_notified ?? false;
   let lastIsLineupAvailable = stored?.last_is_lineup_available ?? false;
 
-  if (!stored) {
-    await upsertMatchState({
-      fixtureId,
-      leagueId,
-      homeTeamId,
-      awayTeamId,
-      status,
-      homeGoals,
-      awayGoals,
-      lastIsLineupAvailable,
-      thirtyMinNotified,
-      lineupNotified,
-      matchStartedNotified,
-      halftimeNotified,
-      secondHalfStartedNotified,
-      extraTimeStartedNotified,
-      penaltyShootoutStartedNotified,
-      matchFinishedNotified,
-    });
-    return;
-  }
+ if (!stored) {
+  await upsertMatchState({
+    fixtureId,
+    fixtureDate,
+    leagueId,
+    homeTeamId,
+    awayTeamId,
+    status,
+    homeGoals,
+    awayGoals,
+    lastIsLineupAvailable,
+    thirtyMinNotified,
+    lineupNotified,
+    matchStartedNotified,
+    halftimeNotified,
+    secondHalfStartedNotified,
+    extraTimeStartedNotified,
+    penaltyShootoutStartedNotified,
+    matchFinishedNotified,
+  });
+  return;
+}
 
   if (!thirtyMinNotified && !isStartedStatus(status) && isWithinThirtyMinuteWindow(fixtureDate)) {
     await sendNotificationsToUsers(finalUsers, (userId) => ({
@@ -594,28 +613,29 @@ if (
   }
 
   await upsertMatchState({
-    fixtureId,
-    leagueId,
-    homeTeamId,
-    awayTeamId,
-    status,
-    homeGoals,
-    awayGoals,
-    lastIsLineupAvailable: currentLineupAvailable,
-    thirtyMinNotified,
-    lineupNotified,
-    matchStartedNotified,
-    halftimeNotified,
-    secondHalfStartedNotified,
-    extraTimeStartedNotified,
-    penaltyShootoutStartedNotified,
-    matchFinishedNotified,
-  });
+  fixtureId,
+  fixtureDate,
+  leagueId,
+  homeTeamId,
+  awayTeamId,
+  status,
+  homeGoals,
+  awayGoals,
+  lastIsLineupAvailable: currentLineupAvailable,
+  thirtyMinNotified,
+  lineupNotified,
+  matchStartedNotified,
+  halftimeNotified,
+  secondHalfStartedNotified,
+  extraTimeStartedNotified,
+  penaltyShootoutStartedNotified,
+  matchFinishedNotified,
+});
 }
 
 async function initializeTrackedFixturesState() {
   const liveFixtures = await fetchLiveFixtures();
-  const trackedFixtureIds = await getTrackedFixtureIds();
+  const trackedFixtureIds = await getTrackedFixtureIdsToPoll();
 
   const fixtureMap = new Map();
 
@@ -698,24 +718,25 @@ async function initializeTrackedFixturesState() {
 
       const lineupNotified = lineupAvailable;
 
-      await upsertMatchState({
-        fixtureId,
-        leagueId,
-        homeTeamId,
-        awayTeamId,
-        status,
-        homeGoals,
-        awayGoals,
-        lastIsLineupAvailable: lineupAvailable,
-        thirtyMinNotified,
-        lineupNotified,
-        matchStartedNotified,
-        halftimeNotified,
-        secondHalfStartedNotified,
-        extraTimeStartedNotified,
-        penaltyShootoutStartedNotified,
-        matchFinishedNotified,
-      });
+    await upsertMatchState({
+  fixtureId,
+  fixtureDate,
+  leagueId,
+  homeTeamId,
+  awayTeamId,
+  status,
+  homeGoals,
+  awayGoals,
+  lastIsLineupAvailable: lineupAvailable,
+  thirtyMinNotified,
+  lineupNotified,
+  matchStartedNotified,
+  halftimeNotified,
+  secondHalfStartedNotified,
+  extraTimeStartedNotified,
+  penaltyShootoutStartedNotified,
+  matchFinishedNotified,
+});
     } catch (err) {
       console.error('Notification engine baseline error:', err.message);
     }
@@ -726,7 +747,7 @@ async function initializeTrackedFixturesState() {
 
 async function runNotificationEngineOnce() {
   const liveFixtures = await fetchLiveFixtures();
-  const trackedFixtureIds = await getTrackedFixtureIds();
+  const trackedFixtureIds = await getTrackedFixtureIdsToPoll();
 
   const fixtureMap = new Map();
 

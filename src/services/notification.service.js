@@ -128,6 +128,7 @@ exports.getMatchOverrides = async (userId) => {
 exports.upsertMatchOverride = async ({
   userId,
   fixtureId,
+  fixtureDate,
 }) => {
   const result = await pool.query(
     `
@@ -145,6 +146,36 @@ exports.upsertMatchOverride = async ({
     `,
     [userId, fixtureId]
   );
+
+    if (fixtureDate) {
+    await pool.query(
+      `
+      INSERT INTO notification_match_state (
+        fixture_id,
+        fixture_date,
+        last_status,
+        last_home_goals,
+        last_away_goals,
+        last_is_lineup_available,
+        thirty_min_notified,
+        lineup_notified,
+        match_started_notified,
+        halftime_notified,
+        second_half_started_notified,
+        extra_time_started_notified,
+        penalty_shootout_started_notified,
+        match_finished_notified,
+        updated_at
+      )
+      VALUES ($1, $2, '', 0, 0, false, false, false, false, false, false, false, false, false, CURRENT_TIMESTAMP)
+      ON CONFLICT (fixture_id)
+      DO UPDATE SET
+        fixture_date = COALESCE(notification_match_state.fixture_date, EXCLUDED.fixture_date),
+        updated_at = CURRENT_TIMESTAMP
+      `,
+      [fixtureId, fixtureDate]
+    );
+  }
 
   return result.rows[0];
 };
