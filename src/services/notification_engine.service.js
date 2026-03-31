@@ -1,11 +1,15 @@
 const pool = require('../config/database');
 const axios = require('axios');
 const transferNotificationService = require('./notification_transfer.service');
+const notificationService = require('./notification.service');
 
 let engineInterval = null;
 let transferInterval = null;
+let slowRefreshInterval = null;
 let engineRunning = false;
 const TRACKING_WINDOW_MINUTES = 90;
+const SLOW_REFRESH_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const SLOW_REFRESH_DAYS_AHEAD = 7;
 
 async function fetchLiveFixtures() {
   const response = await axios.get(
@@ -291,25 +295,25 @@ async function upsertMatchState({
       updated_at = CURRENT_TIMESTAMP
     RETURNING *
     `,
-   [
-  fixtureId,
-  fixtureDate,
-  leagueId,
-  homeTeamId,
-  awayTeamId,
-  status,
-  homeGoals,
-  awayGoals,
-  lastIsLineupAvailable,
-  thirtyMinNotified,
-  lineupNotified,
-  matchStartedNotified,
-  halftimeNotified,
-  secondHalfStartedNotified,
-  extraTimeStartedNotified,
-  penaltyShootoutStartedNotified,
-  matchFinishedNotified,
-]
+    [
+      fixtureId,
+      fixtureDate,
+      leagueId,
+      homeTeamId,
+      awayTeamId,
+      status,
+      homeGoals,
+      awayGoals,
+      lastIsLineupAvailable,
+      thirtyMinNotified,
+      lineupNotified,
+      matchStartedNotified,
+      halftimeNotified,
+      secondHalfStartedNotified,
+      extraTimeStartedNotified,
+      penaltyShootoutStartedNotified,
+      matchFinishedNotified,
+    ]
   );
 
   return result.rows[0];
@@ -510,28 +514,28 @@ async function handleFixture(fixture) {
   let matchFinishedNotified = stored?.match_finished_notified ?? false;
   let lastIsLineupAvailable = stored?.last_is_lineup_available ?? false;
 
- if (!stored) {
-  await upsertMatchState({
-    fixtureId,
-    fixtureDate,
-    leagueId,
-    homeTeamId,
-    awayTeamId,
-    status,
-    homeGoals,
-    awayGoals,
-    lastIsLineupAvailable,
-    thirtyMinNotified,
-    lineupNotified,
-    matchStartedNotified,
-    halftimeNotified,
-    secondHalfStartedNotified,
-    extraTimeStartedNotified,
-    penaltyShootoutStartedNotified,
-    matchFinishedNotified,
-  });
-  return;
-}
+  if (!stored) {
+    await upsertMatchState({
+      fixtureId,
+      fixtureDate,
+      leagueId,
+      homeTeamId,
+      awayTeamId,
+      status,
+      homeGoals,
+      awayGoals,
+      lastIsLineupAvailable,
+      thirtyMinNotified,
+      lineupNotified,
+      matchStartedNotified,
+      halftimeNotified,
+      secondHalfStartedNotified,
+      extraTimeStartedNotified,
+      penaltyShootoutStartedNotified,
+      matchFinishedNotified,
+    });
+    return;
+  }
 
   if (!thirtyMinNotified && !isStartedStatus(status) && isWithinThirtyMinuteWindow(fixtureDate)) {
     await sendNotificationsToUsers(finalUsers, (userId) => ({
@@ -587,15 +591,15 @@ async function handleFixture(fixture) {
   }
 
   const previousHomeGoals = stored.last_home_goals ?? 0;
-const previousAwayGoals = stored.last_away_goals ?? 0;
+  const previousAwayGoals = stored.last_away_goals ?? 0;
 
-const scoreChanged =
-  previousHomeGoals !== homeGoals || previousAwayGoals !== awayGoals;
+  const scoreChanged =
+    previousHomeGoals !== homeGoals || previousAwayGoals !== awayGoals;
 
-if (
-  scoreChanged &&
-  (homeGoals > previousHomeGoals || awayGoals > previousAwayGoals)
-) {
+  if (
+    scoreChanged &&
+    (homeGoals > previousHomeGoals || awayGoals > previousAwayGoals)
+  ) {
     await sendNotificationsToUsers(finalUsers, (userId) => ({
       userId,
       sourceType: 'fixture',
@@ -679,24 +683,24 @@ if (
   }
 
   await upsertMatchState({
-  fixtureId,
-  fixtureDate,
-  leagueId,
-  homeTeamId,
-  awayTeamId,
-  status,
-  homeGoals,
-  awayGoals,
-  lastIsLineupAvailable: currentLineupAvailable,
-  thirtyMinNotified,
-  lineupNotified,
-  matchStartedNotified,
-  halftimeNotified,
-  secondHalfStartedNotified,
-  extraTimeStartedNotified,
-  penaltyShootoutStartedNotified,
-  matchFinishedNotified,
-});
+    fixtureId,
+    fixtureDate,
+    leagueId,
+    homeTeamId,
+    awayTeamId,
+    status,
+    homeGoals,
+    awayGoals,
+    lastIsLineupAvailable: currentLineupAvailable,
+    thirtyMinNotified,
+    lineupNotified,
+    matchStartedNotified,
+    halftimeNotified,
+    secondHalfStartedNotified,
+    extraTimeStartedNotified,
+    penaltyShootoutStartedNotified,
+    matchFinishedNotified,
+  });
 }
 
 async function initializeTrackedFixturesState() {
@@ -785,25 +789,25 @@ async function initializeTrackedFixturesState() {
 
       const lineupNotified = lineupAvailable;
 
-    await upsertMatchState({
-  fixtureId,
-  fixtureDate,
-  leagueId,
-  homeTeamId,
-  awayTeamId,
-  status,
-  homeGoals,
-  awayGoals,
-  lastIsLineupAvailable: lineupAvailable,
-  thirtyMinNotified,
-  lineupNotified,
-  matchStartedNotified,
-  halftimeNotified,
-  secondHalfStartedNotified,
-  extraTimeStartedNotified,
-  penaltyShootoutStartedNotified,
-  matchFinishedNotified,
-});
+      await upsertMatchState({
+        fixtureId,
+        fixtureDate,
+        leagueId,
+        homeTeamId,
+        awayTeamId,
+        status,
+        homeGoals,
+        awayGoals,
+        lastIsLineupAvailable: lineupAvailable,
+        thirtyMinNotified,
+        lineupNotified,
+        matchStartedNotified,
+        halftimeNotified,
+        secondHalfStartedNotified,
+        extraTimeStartedNotified,
+        penaltyShootoutStartedNotified,
+        matchFinishedNotified,
+      });
     } catch (err) {
       console.error('Notification engine baseline error:', err.message);
     }
@@ -852,6 +856,18 @@ async function runNotificationEngineOnce() {
   return { success: true, processed: fixtures.length };
 }
 
+async function runSlowSubscriptionRefreshOnce() {
+  const result = await notificationService.refreshTrackedSubscriptionsFixtures({
+    daysAhead: SLOW_REFRESH_DAYS_AHEAD,
+    useCache: true,
+  });
+
+  return {
+    success: true,
+    ...result,
+  };
+}
+
 exports.runNotificationEngine = async () => {
   return await runNotificationEngineOnce();
 };
@@ -865,6 +881,12 @@ exports.startNotificationEngine = async () => {
 
   await initializeTrackedFixturesState();
 
+  try {
+    await runSlowSubscriptionRefreshOnce();
+  } catch (err) {
+    console.error('Initial slow subscription refresh error:', err.message);
+  }
+
   engineInterval = setInterval(async () => {
     try {
       await runNotificationEngineOnce();
@@ -872,6 +894,14 @@ exports.startNotificationEngine = async () => {
       console.error('Notification engine loop error:', err.message);
     }
   }, 60000);
+
+  slowRefreshInterval = setInterval(async () => {
+    try {
+      await runSlowSubscriptionRefreshOnce();
+    } catch (err) {
+      console.error('Slow subscription refresh loop error:', err.message);
+    }
+  }, SLOW_REFRESH_INTERVAL_MS);
 
   transferInterval = setInterval(async () => {
     try {
@@ -890,6 +920,11 @@ exports.stopNotificationEngine = async () => {
     engineInterval = null;
   }
 
+  if (slowRefreshInterval) {
+    clearInterval(slowRefreshInterval);
+    slowRefreshInterval = null;
+  }
+
   if (transferInterval) {
     clearInterval(transferInterval);
     transferInterval = null;
@@ -898,6 +933,10 @@ exports.stopNotificationEngine = async () => {
   engineRunning = false;
 
   return { success: true, message: 'Engine stopped' };
+};
+
+exports.runSlowSubscriptionRefresh = async () => {
+  return await runSlowSubscriptionRefreshOnce();
 };
 
 exports.getNotificationEngineStatus = async () => {

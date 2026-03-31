@@ -1,6 +1,9 @@
 const pool = require('../config/database');
 const axios = require('axios');
 
+const SUBSCRIPTION_SEED_CACHE_MS = 10 * 60 * 1000;
+const subscriptionSeedCache = new Map();
+
 exports.getSubscriptions = async (userId) => {
   const result = await pool.query(
     `SELECT * FROM notification_subscriptions
@@ -16,6 +19,28 @@ function formatDateYYYYMMDD(date) {
   const month = String(date.getUTCMonth() + 1).padStart(2, '0');
   const day = String(date.getUTCDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+}
+
+function addDays(date, days) {
+  return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
+}
+
+function getSubscriptionSeedCacheKey(sourceType, sourceId, daysAhead) {
+  return `${sourceType}:${sourceId}:${daysAhead}`;
+}
+
+function shouldSkipSeedByCache({ sourceType, sourceId, daysAhead }) {
+  const key = getSubscriptionSeedCacheKey(sourceType, sourceId, daysAhead);
+  const lastRun = subscriptionSeedCache.get(key);
+
+  if (!lastRun) return false;
+
+  return Date.now() - lastRun < SUBSCRIPTION_SEED_CACHE_MS;
+}
+
+function markSeedCache({ sourceType, sourceId, daysAhead }) {
+  const key = getSubscriptionSeedCacheKey(sourceType, sourceId, daysAhead);
+  subscriptionSeedCache.set(key, Date.now());
 }
 
 function normalizeStatus(status) {
@@ -82,6 +107,33 @@ async function fetchFixturesByLeagueAndDate(leagueId, date) {
   );
 
   return response.data?.response || [];
+}
+
+async function fetchFixturesForSourceAcrossDays({
+  sourceType,
+  sourceId,
+  daysAhead = 1,
+}) {
+  const allFixtures = [];
+  const now = new Date();
+
+  for (let offset = 0; offset <= daysAhead; offset++) {
+    const dateStr = formatDateYYYYMMDD(addDays(now, offset));
+
+    let dayFixtures = [];
+
+    if (sourceType === 'team') {
+      dayFixtures = await fetchFixturesByTeamAndDate(sourceId, dateStr);
+    } else if (sourceType === 'competition') {
+      dayFixtures = await fetchFixturesByLeagueAndDate(sourceId, dateStr);
+    }
+
+    if (Array.isArray(dayFixtures) && dayFixtures.length > 0) {
+      allFixtures.push(...dayFixtures);
+    }
+  }
+
+  return allFixtures;
 }
 
 async function upsertDiscoveredFixtureState(fixture) {
@@ -197,26 +249,32 @@ async function upsertDiscoveredFixtureState(fixture) {
   );
 }
 
-async function seedFixturesForSubscription({ sourceType, sourceId }) {
-  const now = new Date();
-  const todayStr = formatDateYYYYMMDD(now);
-
-  const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-  const tomorrowStr = formatDateYYYYMMDD(tomorrow);
-
-  let fixtures = [];
-
-  if (sourceType === 'team') {
-    const todayFixtures = await fetchFixturesByTeamAndDate(sourceId, todayStr);
-    const tomorrowFixtures = await fetchFixturesByTeamAndDate(sourceId, tomorrowStr);
-    fixtures = [...todayFixtures, ...tomorrowFixtures];
-  } else if (sourceType === 'competition') {
-    const todayFixtures = await fetchFixturesByLeagueAndDate(sourceId, todayStr);
-    const tomorrowFixtures = await fetchFixturesByLeagueAndDate(sourceId, tomorrowStr);
-    fixtures = [...todayFixtures, ...tomorrowFixtures];
-  } else {
-    return { seeded: 0 };
+async function seedFixturesForSubscription({
+  sourceType,
+  sourceId,
+  daysAhead = 1,
+  useCache = true,
+}) {
+  if (sourceType !== 'team' && sourceType !== 'competition') {
+    return { seeded: 0, skippedByCache: false };
   }
+
+  if (
+    useCache &&
+    shouldSkipSeedByCache({
+      sourceType,
+      sourceId,
+      daysAhead,
+    })
+  ) {
+    return { seeded: 0, skippedByCache: true };
+  }
+
+  const fixtures = await fetchFixturesForSourceAcrossDays({
+    sourceType,
+    sourceId,
+    daysAhead,
+  });
 
   const fixtureMap = new Map();
 
@@ -234,7 +292,18 @@ async function seedFixturesForSubscription({ sourceType, sourceId }) {
     seeded++;
   }
 
-  return { seeded };
+  if (useCache) {
+    markSeedCache({
+      sourceType,
+      sourceId,
+      daysAhead,
+    });
+  }
+
+  return {
+    seeded,
+    skippedByCache: false,
+  };
 }
 
 exports.upsertSubscription = async ({
@@ -265,6 +334,8 @@ exports.upsertSubscription = async ({
       await seedFixturesForSubscription({
         sourceType,
         sourceId,
+        daysAhead: 1,
+        useCache: true,
       });
     } catch (err) {
       console.error('Subscription fixture seed error:', err.message);
@@ -385,7 +456,7 @@ exports.upsertMatchOverride = async ({
     [userId, fixtureId]
   );
 
-    if (fixtureDate) {
+  if (fixtureDate) {
     await pool.query(
       `
       INSERT INTO notification_match_state (
@@ -573,4 +644,53 @@ exports.upsertMatchEventPreference = async ({
   );
 
   return result.rows[0];
+};
+
+exports.seedFixturesForSubscription = seedFixturesForSubscription;
+
+exports.refreshTrackedSubscriptionsFixtures = async ({
+  daysAhead = 7,
+  useCache = true,
+} = {}) => {
+  const result = await pool.query(
+    `
+    SELECT DISTINCT source_type, source_id
+    FROM notification_subscriptions
+    WHERE is_enabled = true
+      AND source_type IN ('team', 'competition')
+    `
+  );
+
+  let processed = 0;
+  let seeded = 0;
+  let skippedByCache = 0;
+
+  for (const row of result.rows) {
+    try {
+      const seedResult = await seedFixturesForSubscription({
+        sourceType: row.source_type,
+        sourceId: row.source_id,
+        daysAhead,
+        useCache,
+      });
+
+      processed += 1;
+      seeded += seedResult.seeded || 0;
+
+      if (seedResult.skippedByCache) {
+        skippedByCache += 1;
+      }
+    } catch (err) {
+      console.error(
+        `Subscription refresh seed error for ${row.source_type}:${row.source_id}:`,
+        err.message
+      );
+    }
+  }
+
+  return {
+    processed,
+    seeded,
+    skippedByCache,
+  };
 };
