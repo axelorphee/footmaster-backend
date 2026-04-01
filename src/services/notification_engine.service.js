@@ -646,21 +646,38 @@ async function handleFixture(fixture) {
   const scoreChanged =
     previousHomeGoals !== homeGoals || previousAwayGoals !== awayGoals;
 
-  if (
-    scoreChanged &&
-    (homeGoals > previousHomeGoals || awayGoals > previousAwayGoals)
-  ) {
-    await sendNotificationsToUsers(finalUsers, (userId) => ({
-      userId,
-      sourceType: 'fixture',
-      sourceId: fixtureId,
-      fixtureId,
-      eventType: 'goal',
-      title: `${homeTeamName} ${homeGoals} - ${awayGoals} ${awayTeamName}`,
-      message: `But dans le match.`,
-      metadata,
-    }));
+ if (
+  scoreChanged &&
+  (homeGoals > previousHomeGoals || awayGoals > previousAwayGoals)
+) {
+  const homeScored = homeGoals > previousHomeGoals;
+  const awayScored = awayGoals > previousAwayGoals;
+
+  let goalTitle = `${homeTeamName} ${homeGoals} - ${awayGoals} ${awayTeamName}`;
+  let goalMessage = 'But dans le match.';
+
+  if (homeScored && !awayScored) {
+    goalTitle = `${homeTeamName} [${homeGoals}] - ${awayGoals} ${awayTeamName}`;
+    goalMessage = `But pour ${homeTeamName}.`;
+  } else if (awayScored && !homeScored) {
+    goalTitle = `${homeTeamName} ${homeGoals} - [${awayGoals}] ${awayTeamName}`;
+    goalMessage = `But pour ${awayTeamName}.`;
+  } else if (homeScored && awayScored) {
+    goalTitle = `${homeTeamName} [${homeGoals}] - [${awayGoals}] ${awayTeamName}`;
+    goalMessage = `Le score a changé des deux côtés.`;
   }
+
+  await sendNotificationsToUsers(finalUsers, (userId) => ({
+    userId,
+    sourceType: 'fixture',
+    sourceId: fixtureId,
+    fixtureId,
+    eventType: 'goal',
+    title: goalTitle,
+    message: goalMessage,
+    metadata,
+  }));
+}
 
   if (!halftimeNotified && isHalftimeStatus(status)) {
     await sendNotificationsToUsers(finalUsers, (userId) => ({
