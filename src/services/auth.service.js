@@ -95,7 +95,10 @@ exports.login = async (email, password) => {
   );
 
   if (userResult.rows.length === 0) {
-    throw createError(401, 'Invalid credentials');
+    const err = createError(401, 'Invalid credentials');
+    err.isOperational = true;
+    err.publicMessage = 'Identifiants invalides.';
+    throw err;
   }
 
   const user = userResult.rows[0];
@@ -103,7 +106,10 @@ exports.login = async (email, password) => {
   const isMatch = await bcrypt.compare(password, user.password);
 
   if (!isMatch) {
-    throw createError(401, 'Invalid credentials');
+    const err = createError(401, 'Invalid credentials');
+    err.isOperational = true;
+    err.publicMessage = 'Identifiants invalides.';
+    throw err;
   }
 
   const token = jwt.sign(
