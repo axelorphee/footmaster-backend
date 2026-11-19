@@ -1,14 +1,24 @@
+
 {
-  "name": "backend",
+  "name": "footmaster-backend",
   "version": "1.0.0",
-  "main": "index.js",
+  "description": "REST API backend for FootMaster, a football statistics and Fantasy Football application.",
+  "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "football",
+    "fantasy-football",
+    "nodejs",
+    "express",
+    "postgresql",
+    "rest-api",
+    "firebase",
+    "jwt"
+  ],
+  "author": "Orphée Axel Oladjouhon BADA",
   "license": "ISC",
-  "description": "",
   "dependencies": {
     "axios": "^1.13.5",
     "bcrypt": "^6.0.0",
