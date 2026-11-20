@@ -201,6 +201,17 @@ The backend is operational and under continued development.
 Database initialization scripts, detailed endpoint documentation,
 and additional automated tests are planned for future improvements.
 
+
+## Related Repository
+
+The Flutter client application is available in a separate repository:
+
+[FootMaster Frontend](https://github.com/axelorphee/footmaster-frontend)
+
+The frontend provides football statistics, match analysis,
+Fantasy Football, personalized favorites and notifications.
+
+
 ## Author
 
 Orphée Axel Oladjouhon BADA
